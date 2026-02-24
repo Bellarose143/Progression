@@ -1,0 +1,28 @@
+{
+    "runs": [
+        {
+            "label": "baseline-2agents",
+            "worldSize": 64,
+            "agents": 2,
+            "ticks": 17280,
+            "seed": 1234,
+            "verbosity": "summary"
+        },
+        {
+            "label": "baseline-4agents",
+            "worldSize": 64,
+            "agents": 4,
+            "ticks": 17280,
+            "seed": 1234,
+            "verbosity": "summary"
+        },
+        {
+            "label": "large-world",
+            "worldSize": 128,
+            "agents": 4,
+            "ticks": 17280,
+            "seed": 1234,
+            "verbosity": "summary"
+        }
+    ]
+}
