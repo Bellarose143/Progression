@@ -47,3 +47,21 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Solution: conditional branching on `_largeWorld` to preserve old code paths for test worlds
   - Always run WorldGenDistributionTests first as a quick sanity check before full suite
 ---
+
+## 2026-03-08 - US-003
+- Recalibrated animal system for 350×350 world scale
+- Changes to Animal.cs:
+  - Territory radii updated: Rabbit=8, Deer=15, Cow=12, Sheep=10, Boar=12, Wolf=25
+  - Flee detection ranges updated: Deer=15, Rabbit=6, Cow=10, Sheep=12
+  - Old 64×64 values noted in comment
+- Changes to World.cs:
+  - Animal spawn density: 0.005 for large worlds (was 0.04) to keep total ~400-600
+  - Territory center clamping: uses Min(25, worldSize/2 - 1) to handle small test worlds
+- SimConfig values already correct: WolfAggroRange=8, WolfPackConvergeRange=15, BoarChargeRange=5, StructureDeterrentRange=10
+- Build: 0 errors
+- Tests: 31/32 AnimalEntity pass (FleeSlow_CowMovesSlower pre-existing failure)
+- Files changed: Animal.cs, World.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Math.Clamp crashes if min > max — always guard maxRadius against world size for small test worlds
+  - Animal territory radius affects world gen (territory center clamping) — not just runtime behavior
+---

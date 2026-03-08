@@ -336,7 +336,10 @@ public class World
 
         if (eligibleTiles.Count == 0) return;
 
-        int targetCount = (int)(eligibleTiles.Count * 0.04); // [CALIBRATE LATER]
+        // 350×350: ~0.005 density to keep total animals similar to 64×64 (~400-600)
+        // 64×64 legacy: 0.04 density (preserves RNG-dependent test baselines)
+        double animalDensity = _largeWorld ? 0.005 : 0.04;
+        int targetCount = (int)(eligibleTiles.Count * animalDensity);
         var animalTiles = new HashSet<(int, int)>();
         (int X, int Y) lastPlaced = (-1, -1);
 
@@ -383,7 +386,8 @@ public class World
             var biome = tile.Biome;
             int herdId = nextHerdId++;
             // D25a fix: Clamp territory center away from map edges to prevent edge trapping
-            int maxRadius = 6; // Wolf has largest territory radius
+            // Use wolf territory radius (largest) but cap to half world size for small test worlds
+            int maxRadius = Math.Min(25, Math.Min(Width, Height) / 2 - 1);
             var territoryCenter = (
                 Math.Clamp(chosen.X, maxRadius, Width - 1 - maxRadius),
                 Math.Clamp(chosen.Y, maxRadius, Height - 1 - maxRadius)

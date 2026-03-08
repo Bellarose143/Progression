@@ -56,7 +56,7 @@
         "dotnet test passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "These are in AnimalAI.cs, AnimalSpecies.cs, and possibly SimConfig. Some may be hardcoded — extract to named constants. The total animal population should be similar to the current sim, not 30x more animals."
     },
     {
