@@ -1,0 +1,25 @@
+# Ralph Progress Log
+Started: Sun Mar  8 06:42:16 UTC 2026
+---
+
+## Codebase Patterns
+- dotnet is at "/mnt/c/Program Files/dotnet/dotnet.exe" on this WSL setup
+- SimConfig.cs is the central constants file — all distance/range values live here with Old 64×64 comments
+- Tests use explicit World(64, 64, seed) for small-grid testing — this is intentional parameterization
+- Pre-existing test failures exist in D25bBaselineTests and DeathRegressionIntegrationTests (death count assertions at specific seeds) — unrelated to world scale work
+- Integration tests are extremely slow (1+ min each running 50K ticks) — filter with --filter when possible
+- Always call Pen.ResetIdCounter() in test setup alongside Agent/Animal/Carcass
+
+---
+
+## 2026-03-08 - US-001
+- **Verified** all SimConfig distance constants already recalibrated for 350×350 (~15ft/tile)
+- All ACs confirmed met: DefaultGridWidth/Height=350, perception radii (Plains=30, Forest=12, Mountain=20, Desert=35), home/settlement constants, exploration constants, foraging constants, combat constants, trapping constants
+- No hardcoded 64 references for world size in CivSim.Core (only in comments for reference, and one List capacity in EventBus.cs)
+- Build: 0 errors, 0 warnings
+- Files changed: prd.json (marked passes:true), progress.txt
+- **Learnings for future iterations:**
+  - The world scale migration constants were already done in a prior session — SimConfig header documents "Phase A"
+  - The test suite takes 10+ minutes for full integration tests on WSL
+  - Pre-existing test failures (D25bBaselineTests seed 16001, DeathRegressionIntegrationTests seeds 16001/42) are death-count regressions, not scale-related
+---
