@@ -13,6 +13,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - Anti-pattern #11 (RNG cascade): ANY change to random call count/order cascades ALL downstream generation. Conditional branching on world size preserves old test baselines.
 - The "manual commit" (8948157) contains many pre-implemented changes — always verify ACs against existing code before writing new code
 - Pre-existing test failures also include: AnimalEntityTests.FleeSlow_CowMovesSlower, MoveDominanceTests.FounderAgent_Move_Below_60_Percent_LateGame
+- Tests that use distance thresholds (e.g., CaretakerRange, CaretakerMTMEscapeDist) need grid sizes and agent positions scaled for new 350×350 constants — reference SimConfig values instead of hardcoding distances
 
 ---
 
@@ -80,4 +81,22 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - **Learnings for future iterations:**
   - The "manual commit of lots of old files" (8948157) contained many pre-implemented scale changes — always verify ACs before coding
   - Camera zoom-to-cursor already uses GetScreenToWorld2D before/after pattern (RaylibRenderer.cs:141-146)
+---
+
+## 2026-03-08 - US-005
+- Phase A integration validation for 350×350 world scale
+- Headless diagnostics: 50K ticks on seed 42 at 350×350 — completed without crash
+  - 3 agents alive at tick 50K (2 original + 1 child born ~tick 1750)
+  - 12 discoveries (Lean-To, Foraging, Fire, Stone Knife, Farming, Cooking, Weaving, Crude Axe, Clay Hardening, Land Clearing + 2 more)
+  - Settlement "Mossford" founded, oral tradition developed
+  - No infinite pathfinding loops
+- Tests: 329 pass, 6 fail (all pre-existing: D25bBaseline ×2, DeathRegression ×3, FleeSlow_CowMovesSlower)
+- Fixed CaretakerModeTests.Caretaker_Returns_Home_When_Outside_Radius — was failing because old hardcoded distance (12 tiles) was within new CaretakerMTMEscapeDist (40). Updated to use SimConfig.CaretakerMTMEscapeDist + 2 with dynamic grid size.
+- No tests assume DEFAULT world is 64×64 — all use explicit World(w,h,seed) or TestSimBuilder.GridSize()
+- Files changed: CaretakerModeTests.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - 50K tick diagnostic run on 350×350 takes ~10 minutes on WSL
+  - Full test suite with integration tests takes ~40 minutes
+  - Distance-based tests MUST use SimConfig constants, not hardcoded values — the scale migration changed many thresholds
+  - CaretakerMTMEscapeDist=40 is very large; tests using 32×32 grids can't place agents that far away
 ---

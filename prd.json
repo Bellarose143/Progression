@@ -92,7 +92,7 @@
         "dotnet test passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "This is a validation story. If agents are dying or stuck, fix the root cause (likely a distance constant that wasn't updated). Some tests may explicitly create 64x64 worlds — those are fine, they test at that scale. The concern is tests that assume the DEFAULT world is 64x64. Run CivSim.Diagnostics with --death-traces."
     },
     {

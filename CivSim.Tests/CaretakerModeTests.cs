@@ -111,11 +111,13 @@ public class CaretakerModeTests
     [Fact]
     public void Caretaker_Returns_Home_When_Outside_Radius()
     {
+        int escapeDist = SimConfig.CaretakerMTMEscapeDist;
+        int gridSize = escapeDist + 10; // grid large enough to place agent beyond escape distance
         var sim = new TestSimBuilder()
-            .GridSize(32, 32).Seed(1)
+            .GridSize(gridSize, gridSize).Seed(1)
             .AddAgent("Mom", isMale: false, hunger: 80f)
             .AddAgent("Baby", isMale: false, hunger: 80f)
-            .AgentAt("Mom", 12, 0) // 12 tiles east — outside 8-tile radius
+            .AgentAt("Mom", escapeDist + 2, 0) // beyond CaretakerMTMEscapeDist from home
             .AgentHome("Mom", 0, 0)
             .AgentAt("Baby", 0, 0).AgentHome("Baby", 0, 0)
             .AgentAge("Baby", 100)
