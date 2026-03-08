@@ -500,25 +500,25 @@ public class AnimalEntityTests : IDisposable
 
         int startX = cow.X;
 
-        // Tick 1: TicksSinceLastMove will be incremented to 1 (< 2), should NOT move
+        // Cow MoveSpeed is 3, so UpdateFleeing gates on TicksSinceLastMove < MoveSpeed (i.e. < 3).
+        // Tick 1: TicksSinceLastMove incremented to 1 (< 3), should NOT move
         AnimalAI.UpdateAnimal(cow, world, DayTick, agents, rng);
-
-        // Cow should not have moved on tick with TicksSinceLastMove < 2
-        // Note: TicksSinceLastMove was 0, incremented to 1 at start of UpdateAnimal
         Assert.Equal(startX, cow.X);
 
-        // Tick 2: TicksSinceLastMove will be incremented to 2 (>= 2), should move
+        // Tick 2: TicksSinceLastMove incremented to 2 (< 3), still should NOT move
         AnimalAI.UpdateAnimal(cow, world, DayTick + 1, agents, rng);
+        Assert.Equal(startX, cow.X);
 
-        // Now it should have moved (if flee target is reachable and not water)
-        // The animal may or may not have moved depending on tile passability,
-        // but the key assertion is that it was ALLOWED to try on tick 2
+        // Tick 3: TicksSinceLastMove incremented to 3 (>= 3), should now attempt to move
+        AnimalAI.UpdateAnimal(cow, world, DayTick + 2, agents, rng);
+
+        // The cow should have moved (if flee target tile is passable and not water)
         // We verify by checking that either it moved OR the target tile was impassable
         bool movedOrBlocked = cow.X != startX ||
             cow.Y != pos.Y ||
             (world.IsInBounds(pos.X - 1, pos.Y) && world.GetTile(pos.X - 1, pos.Y).Biome == BiomeType.Water);
         Assert.True(movedOrBlocked || cow.State == AnimalState.Idle,
-            "Cow should attempt to move after 2 ticks or transition to Idle if no agent nearby");
+            "Cow should attempt to move after 3 ticks (MoveSpeed=3) or transition to Idle if no agent nearby");
     }
 
     // ═══════════════════════════════════════════════════════════════════════

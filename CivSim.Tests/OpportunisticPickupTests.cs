@@ -444,6 +444,7 @@ public class OpportunisticPickupTests
     // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void OpportunisticPickup_FullSimDeterminism()
     {
         // Gate 3 check #6: Verify the opportunistic pickup RNG is deterministic.
@@ -508,6 +509,7 @@ public class OpportunisticPickupTests
     // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void OpportunisticPickup_ResourceConservation()
     {
         // Gate 3 check #8: Verify opportunistic pickup conserves resources.

@@ -11,6 +11,7 @@ namespace CivSim.Tests;
 public class ExploreReturnPathTests
 {
     [Fact]
+    [Trait("Category", "Slow")]
     public void Agents_Do_Not_Get_Trapped_Far_From_Home()
     {
         // Run a full simulation with seed 16001 for 75000 ticks.
@@ -38,6 +39,7 @@ public class ExploreReturnPathTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void No_Agent_Named_Joshua_Stuck_At_Water_Edge()
     {
         // Run a full simulation with seed 16001 for 75000 ticks.

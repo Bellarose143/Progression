@@ -4,7 +4,6 @@
 
 set -e
 
-# Parse arguments
 MAX_ITERATIONS=10
 
 while [[ $# -gt 0 ]]; do
@@ -18,14 +17,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# SCRIPT_DIR = where ralph.sh lives (scripts/ralph/)
-# PROJECT_DIR = where you run ralph FROM (your project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(pwd)"
 PRD_FILE="$PROJECT_DIR/prd.json"
 PROGRESS_FILE="$PROJECT_DIR/progress.txt"
 ARCHIVE_DIR="$PROJECT_DIR/archive"
 LAST_BRANCH_FILE="$PROJECT_DIR/.last-branch"
+TEMP_OUTPUT="$PROJECT_DIR/.ralph_output_tmp"
 
 # Archive previous run if branch changed
 if [ -f "$PRD_FILE" ] && [ -f "$LAST_BRANCH_FILE" ]; then
@@ -75,7 +73,6 @@ for i in $(seq 1 $MAX_ITERATIONS); do
   echo "  Time: $(date '+%H:%M:%S')"
   echo "==============================================================="
 
-  # Show current PRD status at a glance
   if [ -f "$PRD_FILE" ] && command -v jq &>/dev/null; then
     TOTAL=$(jq '[.userStories[]] | length' "$PRD_FILE" 2>/dev/null || echo "?")
     DONE=$(jq '[.userStories[] | select(.passes == true)] | length' "$PRD_FILE" 2>/dev/null || echo "?")
@@ -85,18 +82,21 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     echo "==============================================================="
   fi
 
-  OUTPUT=$(claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md") || true
-  echo "$OUTPUT"
+  # Run claude, stream directly to terminal, also save to temp file for COMPLETE check
+  claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee "$TEMP_OUTPUT" || true
 
   # Check for completion signal
-  if echo "$OUTPUT" | grep -q "<promise>COMPLETE</promise>"; then
+  if grep -q "<promise>COMPLETE</promise>" "$TEMP_OUTPUT" 2>/dev/null; then
     echo ""
     echo "Ralph completed all tasks!"
     echo "Completed at iteration $i of $MAX_ITERATIONS"
+    rm -f "$TEMP_OUTPUT"
     exit 0
   fi
 
-  echo "Iteration $i complete. Continuing..."
+  rm -f "$TEMP_OUTPUT"
+  echo ""
+  echo "Iteration $i complete at $(date '+%H:%M:%S'). Continuing..."
   sleep 2
 done
 

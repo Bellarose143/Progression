@@ -19,7 +19,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "notes": "Keep old 64x64 values as comments for reference. The world size must be parameterized so tests can still use smaller grids. Many constants may not exist yet in SimConfig — create them. Some constants may be inline magic numbers in AgentAI.cs/UtilityScorer.cs — extract to SimConfig."
     },
     {
@@ -38,7 +38,7 @@
         "dotnet test passes"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": "Total world resources should stay roughly similar to the old 64x64 world — the density per tile drops but there are ~30x more tiles. Berry patch generation needs the cluster size increased from 3-6 tiles to 15-25 tiles. Animal spawn counts and herd placement should continue to work but territory radii are handled in US-003."
     },
     {
@@ -56,7 +56,7 @@
         "dotnet test passes"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": "These are in AnimalAI.cs, AnimalSpecies.cs, and possibly SimConfig. Some may be hardcoded — extract to named constants. The total animal population should be similar to the current sim, not 30x more animals."
     },
     {
@@ -73,7 +73,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "notes": "LOD thresholds in WorldRenderer.cs and AgentRenderer.cs. Camera in RaylibRenderer.cs. Pathfinding in SimplePathfinder.cs. Home pull in UtilityScorer.cs. Be careful with LOD — the zoom range is much wider now so the thresholds need thought (e.g., flat rectangles below 0.1, simplified 0.1-0.3, full sprites above 0.3)."
     },
     {
@@ -92,7 +92,7 @@
         "dotnet test passes"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "notes": "This is a validation story. If agents are dying or stuck, fix the root cause (likely a distance constant that wasn't updated). Some tests may explicitly create 64x64 worlds — those are fine, they test at that scale. The concern is tests that assume the DEFAULT world is 64x64. Run CivSim.Diagnostics with --death-traces."
     },
     {
@@ -107,7 +107,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "This is data model only — no behavior yet. Check existing shelter tier logic in Agent.cs and Simulation.cs to understand what tiers exist. The Pen list moves from wherever it currently lives to under Settlement. Follow the same static _nextId pattern used by Agent, Animal, Carcass, Pen."
     },
     {

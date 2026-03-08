@@ -11,6 +11,7 @@ public class D25cFinalValidation
     public D25cFinalValidation(ITestOutputHelper output) { _output = output; }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(42)]
     [InlineData(1337)]
     [InlineData(16001)]

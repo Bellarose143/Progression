@@ -11,6 +11,7 @@ public class D25bDeathDiagnosticTests
     public D25bDeathDiagnosticTests(ITestOutputHelper output) => _output = output;
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(42)]
     [InlineData(16001)]
     [InlineData(55555)]

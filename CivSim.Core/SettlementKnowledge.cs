@@ -670,9 +670,8 @@ public class SettlementKnowledge
         int midX = (int)nearbyAgentObjects.Average(a => a.X);
         int midY = (int)nearbyAgentObjects.Average(a => a.Y);
 
-        return new Settlement
+        return new Settlement(-1) // Negative ID = founding group (not from SettlementDetector)
         {
-            Id = -1, // Negative ID = founding group (not from SettlementDetector)
             Name = "Founding Group",
             CenterX = midX,
             CenterY = midY,

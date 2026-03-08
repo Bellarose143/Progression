@@ -18,7 +18,6 @@ public static class SettlementDetector
         int threshold = SimConfig.SettlementShelterThreshold;
         var settlements = new List<Settlement>();
         var visited = new HashSet<(int, int)>();
-        int nextId = 1;
 
         for (int x = 0; x < world.Width; x++)
         {
@@ -92,7 +91,6 @@ public static class SettlementDetector
 
                     settlements.Add(new Settlement
                     {
-                        Id = nextId++,
                         Name = SettlementNameGenerator.Generate(random),
                         CenterX = centerX,
                         CenterY = centerY,

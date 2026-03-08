@@ -95,6 +95,7 @@ public class MoveDominanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void FounderAgent_Move_Below_60_Percent_LateGame()
     {
         // Run seed 1337 for 5000 ticks from tick 50000 and verify Alexander (Agent 2)

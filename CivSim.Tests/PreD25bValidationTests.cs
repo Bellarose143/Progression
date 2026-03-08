@@ -12,6 +12,7 @@ public class PreD25bValidationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    [Trait("Category", "Slow")]
     public void Seed16001_ExploreDirectionStreaks_NoneExceed3()
     {
         Agent.ResetIdCounter();
@@ -63,6 +64,7 @@ public class PreD25bValidationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    [Trait("Category", "Slow")]
     public void Seed16001_NoAnimalsStuckAtEdge100Ticks()
     {
         Agent.ResetIdCounter();
@@ -108,6 +110,7 @@ public class PreD25bValidationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    [Trait("Category", "Slow")]
     public void Seed16001_ReportLilyIdlePercent()
     {
         Agent.ResetIdCounter();
