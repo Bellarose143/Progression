@@ -5603,11 +5603,67 @@ public class AgentAI
         tile.Structures.Add(structureId);
         tile.BuildProgress.Remove(structureId);
 
+        bool isShelter = structureId == "lean_to" || structureId == "shelter" || structureId == "improved_shelter";
+
         // GDD v1.7.1: Set HomeTile when building a shelter (first shelter or closer to current pos)
-        if (structureId == "lean_to" || structureId == "shelter" || structureId == "improved_shelter")
+        if (isShelter)
         {
             agent.HomeTile = (tx, ty);
             trace?.Invoke($"[TRACE Agent {agent.Id}] CompleteBuild: HomeTile set to ({tx},{ty})");
+        }
+
+        // US-007: Settlement founding on shelter build
+        if (isShelter && _currentSettlements != null)
+        {
+            if (agent.SettlementId == null)
+            {
+                // Found a new settlement
+                // Use a separate RNG seeded from tile position + tick to avoid cascading the AgentAI random (anti-pattern #11)
+                var nameRng = new Random(tx * 31 + ty * 17 + currentTick);
+                var settlement = new Settlement
+                {
+                    Name = SettlementNameGenerator.Generate(nameRng),
+                    CenterTile = (tx, ty),
+                    FoundedTick = currentTick,
+                    ShelterCount = 1,
+                };
+                settlement.Members.Add(agent.Id);
+                settlement.Structures.Add((tx, ty, structureId));
+                agent.SettlementId = settlement.Id;
+
+                // Add nearby agents within SpawnClusterRadius
+                if (_currentAllAgents != null)
+                {
+                    foreach (var other in _currentAllAgents)
+                    {
+                        if (other.Id == agent.Id || !other.IsAlive) continue;
+                        int dist = Math.Max(Math.Abs(other.X - tx), Math.Abs(other.Y - ty));
+                        if (dist <= SimConfig.SpawnClusterRadius && other.SettlementId == null)
+                        {
+                            settlement.Members.Add(other.Id);
+                            other.SettlementId = settlement.Id;
+                            trace?.Invoke($"[TRACE Agent {other.Id}] Joined settlement '{settlement.Name}' (nearby at founding)");
+                        }
+                    }
+                }
+
+                _currentSettlements.Add(settlement);
+                trace?.Invoke($"[TRACE Agent {agent.Id}] Founded settlement '{settlement.Name}' at ({tx},{ty}) with {settlement.Members.Count} members");
+                bus.Emit(currentTick,
+                    $"Settlement '{settlement.Name}' founded at ({tx},{ty}) with {settlement.Members.Count} members!",
+                    EventType.Discovery, agentId: agent.Id);
+            }
+            else
+            {
+                // Add structure to existing settlement
+                var existing = _currentSettlements.FirstOrDefault(s => s.Id == agent.SettlementId);
+                if (existing != null)
+                {
+                    existing.Structures.Add((tx, ty, structureId));
+                    existing.ShelterCount++;
+                    trace?.Invoke($"[TRACE Agent {agent.Id}] Added shelter to settlement '{existing.Name}' (now {existing.ShelterCount} shelters)");
+                }
+            }
         }
 
         // D25d: When animal_pen completes, create a Pen entity

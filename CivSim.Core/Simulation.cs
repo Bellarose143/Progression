@@ -693,47 +693,14 @@ public class Simulation
             EventBus.Emit(CurrentTick, $"Year {SimConfig.TicksToYears(CurrentTick):F0} - Population: {aliveCount}", EventType.Milestone);
         }
 
-        // GDD v1.8: Settlement detection every SettlementDetectionInterval ticks (~1 season)
-        if (CurrentTick % SimConfig.SettlementDetectionInterval == 0)
+        // US-007: Settlements are now persistent — founded when first shelter is built (in AgentAI.CompleteBuild).
+        // No longer recreated each detection interval. Track new settlements for event emission.
+        foreach (var settlement in Settlements)
         {
-            Settlements = SettlementDetector.Detect(World, Agents, CurrentTick, random);
-
-            // Assign persistent names: if a settlement center is within 3 tiles of a known position, reuse the name
-            foreach (var settlement in Settlements)
+            if (settlement.Id > 0 && !_knownSettlementNames.Contains(settlement.Name))
             {
-                string? existingName = null;
-                foreach (var kvp in _persistentSettlementNames)
-                {
-                    int dist = Math.Max(Math.Abs(kvp.Key.X - settlement.CenterX),
-                                        Math.Abs(kvp.Key.Y - settlement.CenterY));
-                    if (dist <= 3)
-                    {
-                        existingName = kvp.Value;
-                        break;
-                    }
-                }
-
-                if (existingName != null)
-                {
-                    settlement.Name = existingName;
-                }
-                else
-                {
-                    // New settlement — store its name for persistence
-                    _persistentSettlementNames[(settlement.CenterX, settlement.CenterY)] = settlement.Name;
-                }
-            }
-
-            // Emit events for newly discovered settlements
-            foreach (var settlement in Settlements)
-            {
-                if (!_knownSettlementNames.Contains(settlement.Name))
-                {
-                    _knownSettlementNames.Add(settlement.Name);
-                    EventBus.Emit(CurrentTick,
-                        $"Settlement '{settlement.Name}' founded at ({settlement.CenterX},{settlement.CenterY}) with {settlement.ShelterCount} shelters!",
-                        EventType.Discovery);
-                }
+                _knownSettlementNames.Add(settlement.Name);
+                _persistentSettlementNames[(settlement.CenterX, settlement.CenterY)] = settlement.Name;
             }
         }
 

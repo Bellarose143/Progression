@@ -125,7 +125,7 @@
         "dotnet test passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Check how settlements are currently tracked (likely just a name on the agent or a settlement string). This replaces the old system with the real Settlement entity. FoundedTick must be the tick the shelter build action completes, NOT the tick the game started or ended."
     },
     {

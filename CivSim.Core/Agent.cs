@@ -332,8 +332,8 @@ public class Agent
     public bool ForceActivePerception { get; set; }
 
     // ── Social ─────────────────────────────────────────────────────────
-    /// <summary>The community this agent belongs to, if any. Phase 4 placeholder.</summary>
-    public object? Community { get; set; }
+    /// <summary>US-007: The settlement this agent belongs to, if any. Null until first shelter is built or agent joins a settlement.</summary>
+    public int? SettlementId { get; set; }
 
     // ── GDD v1.7.1: Personality Traits ────────────────────────────────
     /// <summary>GDD v1.7.1: Two personality traits assigned at birth. Modify utility scoring weights.</summary>
@@ -724,7 +724,7 @@ public class Agent
 
         LastActivePerceptionTick = 0;
         ForceActivePerception = false;
-        Community = null;
+        SettlementId = null;
 
         // GDD v1.7.1: Personality traits — 2 per agent
         if (traits != null)
@@ -1493,6 +1493,15 @@ public class Agent
 
         // GDD v1.7.1: Child inherits parent's HomeTile
         child.HomeTile = HomeTile;
+
+        // US-007: Child inherits parent's settlement membership
+        child.SettlementId = SettlementId;
+        if (SettlementId != null && settlements != null)
+        {
+            var settlement = settlements.FirstOrDefault(s => s.Id == SettlementId);
+            if (settlement != null && !settlement.Members.Contains(child.Id))
+                settlement.Members.Add(child.Id);
+        }
 
         // GDD v1.8 Section 3: Child inherits clothing as innate knowledge
         child.Knowledge.Add("clothing");
