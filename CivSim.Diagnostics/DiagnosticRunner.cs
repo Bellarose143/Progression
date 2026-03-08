@@ -217,7 +217,12 @@ public class DiagnosticRunner
             Age = a.Age,
             IsAlive = a.IsAlive,
             Action = a.CurrentAction,
-            Inventory = new Dictionary<ResourceType, int>(a.Inventory)
+            Inventory = new Dictionary<ResourceType, int>(a.Inventory),
+            Restlessness = a.Restlessness,
+            PeakRestlessness = a.PeakRestlessness,
+            RestlessnessSum = a.RestlessnessSum,
+            RestlessnessSampleCount = a.RestlessnessSampleCount,
+            RestlessnessAbove50Ticks = a.RestlessnessAbove50Ticks
         }).ToList();
 
         logger.WriteFinalReport(actualLastTick, finalAgents);

@@ -65,7 +65,19 @@ public class NotificationManager
 
     public void ProcessTickEvents(List<SimulationEvent> events)
     {
-        if (burstCooldown > 0) return;
+        // BUG-10 fix: During burst cooldown, still show deaths and discoveries
+        // (only suppress births and other low-priority events)
+        if (burstCooldown > 0)
+        {
+            foreach (var evt in events)
+            {
+                if (evt.Type == EventType.Death)
+                    Add(FormatDeath(evt.Message), Color.Red);
+                else if (evt.Type == EventType.Discovery)
+                    HandleDiscovery(evt);
+            }
+            return;
+        }
 
         // Burst collapse: if too many events, summarize
         int births = 0, deaths = 0, discoveries = 0;

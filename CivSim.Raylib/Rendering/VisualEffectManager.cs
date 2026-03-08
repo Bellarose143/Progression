@@ -1,43 +1,56 @@
 using Raylib_cs;
 using CivSim.Core;
 using System.Numerics;
-using System.Text.RegularExpressions;
 using Rl = Raylib_cs.Raylib;
 
 namespace CivSim.Raylib.Rendering;
 
-public enum EffectType { Discovery, Birth, DeathStarvation, DeathOldAge, ShelterComplete, ExperimentFail }
+public enum EffectType { Discovery, Birth, DeathStarvation, DeathOldAge, ShelterComplete, ExperimentFail, AnimalKill }
 
 /// <summary>
 /// Manages in-world visual effects (sparkles, hearts, skulls).
 /// Effects run on frame time, independent of simulation speed.
 /// Uses SpriteAtlas icons when available, falls back to procedural shapes.
+/// PERF-05: Pre-allocated effect pool (no per-event heap allocation).
+/// PERF-06: Frustum culling for off-screen effects.
+/// BUG-07: Uses SimulationEvent.AgentId instead of regex parsing.
+/// BUG-08: Uses SimulationEvent.Message for death cause (preserved for compatibility).
 /// </summary>
 public class VisualEffectManager
 {
-    private class VisualEffect
+    private struct VisualEffect
     {
         public EffectType Type;
         public int WorldX, WorldY;
         public float Duration;
         public float Elapsed;
+        public bool Active;
 
-        public float Progress => Math.Clamp(Elapsed / Duration, 0f, 1f);
+        public float Progress => Duration > 0 ? Math.Clamp(Elapsed / Duration, 0f, 1f) : 1f;
     }
 
-    private readonly List<VisualEffect> effects = new();
+    // PERF-05: Pre-allocated fixed pool
+    private const int PoolSize = 64;
+    private readonly VisualEffect[] _pool = new VisualEffect[PoolSize];
+    private int _activeCount;
+
     private readonly SpriteAtlas? atlas;
 
     public VisualEffectManager(SpriteAtlas? atlas = null)
     {
         this.atlas = atlas;
+        _activeCount = 0;
     }
 
     public void ProcessTickEvents(List<SimulationEvent> tickEvents, List<Agent> agents, int tileSize)
     {
         foreach (var evt in tickEvents)
         {
-            Agent? agent = FindAgentFromEvent(evt, agents);
+            // BUG-07 fix: Use first-class AgentId field instead of regex parsing
+            Agent? agent = null;
+            if (evt.AgentId >= 0)
+                agent = agents.FirstOrDefault(a => a.Id == evt.AgentId);
+
             if (agent == null) continue;
 
             int wx = agent.X * tileSize + tileSize / 2;
@@ -57,39 +70,80 @@ public class VisualEffectManager
                     else
                         AddEffect(EffectType.DeathOldAge, wx, wy, 1.5f);
                     break;
+                case EventType.Action:
+                    // Fix 5: Animal kill particle effect — triggers on hunt/combat kill messages
+                    if (evt.Message.Contains("killed a "))
+                        AddEffect(EffectType.AnimalKill, wx, wy, 1.0f);
+                    break;
             }
         }
     }
 
     public void AddEffect(EffectType type, int worldX, int worldY, float duration = 1.5f)
     {
-        effects.Add(new VisualEffect
+        // PERF-05: Recycle from pool instead of allocating
+        int slot = -1;
+        for (int i = 0; i < PoolSize; i++)
+        {
+            if (!_pool[i].Active)
+            {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0)
+        {
+            // Pool full — find oldest effect and evict
+            float maxElapsed = -1;
+            for (int i = 0; i < PoolSize; i++)
+            {
+                if (_pool[i].Elapsed > maxElapsed)
+                {
+                    maxElapsed = _pool[i].Elapsed;
+                    slot = i;
+                }
+            }
+        }
+        if (slot < 0) return; // Safety
+
+        _pool[slot] = new VisualEffect
         {
             Type = type,
             WorldX = worldX,
             WorldY = worldY,
             Duration = duration,
-            Elapsed = 0f
-        });
+            Elapsed = 0f,
+            Active = true
+        };
+        _activeCount = Math.Min(_activeCount + 1, PoolSize);
     }
 
     public void Update(float deltaTime)
     {
-        for (int i = effects.Count - 1; i >= 0; i--)
+        for (int i = 0; i < PoolSize; i++)
         {
-            effects[i].Elapsed += deltaTime;
-            if (effects[i].Elapsed >= effects[i].Duration)
-                effects.RemoveAt(i);
+            if (!_pool[i].Active) continue;
+            _pool[i].Elapsed += deltaTime;
+            if (_pool[i].Elapsed >= _pool[i].Duration)
+            {
+                _pool[i].Active = false;
+                _activeCount--;
+            }
         }
     }
 
     /// <summary>Render effects in world-space (inside BeginMode2D).</summary>
     public void Render()
     {
+        if (_activeCount <= 0) return;
+
         bool useSprites = atlas is { IsLoaded: true };
 
-        foreach (var fx in effects)
+        for (int i = 0; i < PoolSize; i++)
         {
+            ref var fx = ref _pool[i];
+            if (!fx.Active) continue;
+
             float t = fx.Progress;
             byte alpha = (byte)(255 * (1f - t));
 
@@ -98,10 +152,8 @@ public class VisualEffectManager
                 case EffectType.Discovery:
                     if (useSprites)
                     {
-                        // Sparkle sprite floating up and fading
                         float scale = 0.8f + 0.6f * t;
                         atlas!.DrawCenteredAlpha("indicators_sparkle", fx.WorldX, fx.WorldY - (int)(15 * t), scale, alpha);
-                        // Lightbulb floats above the sparkle (GDD visual overhaul)
                         atlas!.DrawCenteredAlpha("indicators_lightbulb", fx.WorldX, fx.WorldY - (int)(25 * t), 0.8f, alpha);
                     }
                     else
@@ -140,7 +192,6 @@ public class VisualEffectManager
                     break;
 
                 case EffectType.DeathOldAge:
-                    // Gentle fade circle (keep procedural — no specific sprite needed)
                     Rl.DrawCircle(fx.WorldX, fx.WorldY, 6 + 4 * t,
                         new Color(200, 200, 220, (int)alpha / 2));
                     break;
@@ -162,15 +213,23 @@ public class VisualEffectManager
                             new Color(150, 150, 150, (int)alpha));
                     }
                     break;
+
+                case EffectType.AnimalKill:
+                {
+                    // Red-brown burst: expanding circle that fades
+                    float radius = 6 + 20 * t;
+                    var killColor = new Color(160, 40, 20, (int)alpha);
+                    Rl.DrawCircleLines(fx.WorldX, fx.WorldY, radius, killColor);
+                    Rl.DrawCircleLines(fx.WorldX, fx.WorldY, radius * 0.6f,
+                        new Color(180, 60, 30, (int)(alpha * 0.6f)));
+                    // Small inner filled circle that shrinks
+                    float innerR = 4 * (1f - t);
+                    if (innerR > 0.5f)
+                        Rl.DrawCircle(fx.WorldX, fx.WorldY, innerR,
+                            new Color(200, 50, 20, (int)(alpha * 0.8f)));
+                    break;
+                }
             }
         }
-    }
-
-    private static Agent? FindAgentFromEvent(SimulationEvent evt, List<Agent> agents)
-    {
-        var match = Regex.Match(evt.Message, @"Agent (\d+)");
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int id))
-            return agents.FirstOrDefault(a => a.Id == id);
-        return null;
     }
 }

@@ -210,9 +210,13 @@ public class BuildAndExploreExitTests
             .AgentInventory("Alice", ResourceType.Berries, 8)
             .Build();
 
+        // D11 Fix 3: Start during daytime so night rest doesn't override explore
+        sim.Simulation.CurrentTick = 150;
+
         var alice = sim.GetAgent("Alice");
         alice.ModeCommit.ExploreDirection = (1, 0);
         alice.ModeCommit.ExploreBudget = 20; // Short budget
+        alice.ModeEntryTick = 150;
 
         // Run past budget, then give time to return
         sim.Tick(100);
@@ -228,28 +232,58 @@ public class BuildAndExploreExitTests
     [Fact]
     public void Explore_Gathers_Opportunistically_On_Current_Tile()
     {
+        // D10 Fix 5 edge buffer: place agent away from edges
+        // D11 Fix: Place food on the agent's starting tile so it's gathered
+        // on the very first DecideExplore call, before any movement or
+        // geographic discovery can exit Explore mode.
         var sim = new TestSimBuilder()
-            .GridSize(32, 32).Seed(1)
+            .GridSize(32, 32).Seed(7)
             .AddAgent("Alice", isMale: false, hunger: 90f)
-            .AgentAt("Alice", 0, 0)
-            .AgentHome("Alice", 0, 0)
-            .ShelterAt(0, 0)
+            .AgentAt("Alice", 5, 5)
+            .AgentHome("Alice", 5, 5)
+            .ShelterAt(5, 5)
             .AgentMode("Alice", BehaviorMode.Explore)
-            .AgentInventory("Alice", ResourceType.Berries, 6) // Has inventory space
-            // Place food along the explore path
-            .ResourceAt(1, 0, ResourceType.Berries, 10)
-            .ResourceAt(2, 0, ResourceType.Berries, 10)
+            .AgentInventory("Alice", ResourceType.Berries, 2) // Low starting food
+            // Place food ON the starting tile so gather fires immediately
+            .ResourceAt(5, 5, ResourceType.Berries, 10)
+            .ResourceAt(6, 5, ResourceType.Berries, 10)
             .Build();
+
+        // D11 Fix 3: Start during daytime so night rest doesn't override explore
+        sim.Simulation.CurrentTick = 150;
 
         var alice = sim.GetAgent("Alice");
         alice.ModeCommit.ExploreDirection = (1, 0);
         alice.ModeCommit.ExploreBudget = 100;
+        alice.ModeEntryTick = 150;
+        // Clear any geographic discoveries from perception to prevent early Explore exit
+        alice.ClearPendingGeographicDiscoveries();
+
+        // Clear world-gen resources near spawn to reduce RNG cascade interference
+        for (int dx = -3; dx <= 10; dx++)
+            for (int dy = -3; dy <= 10; dy++)
+            {
+                int tx = 5 + dx, ty = 5 + dy;
+                if (tx >= 0 && tx < 32 && ty >= 0 && ty < 32)
+                {
+                    var t = sim.World.GetTile(tx, ty);
+                    if (tx == 5 && ty == 5) continue; // Keep placed berries on spawn tile
+                    if (tx == 6 && ty == 5) continue; // Keep placed berries on adjacent tile
+                    t.Resources.Clear();
+                }
+            }
 
         int startFood = alice.FoodInInventory();
-        sim.Tick(30);
+        int maxFoodSeen = startFood;
+        for (int t = 0; t < 60; t++)
+        {
+            sim.Tick(1);
+            int food = alice.FoodInInventory();
+            if (food > maxFoodSeen) maxFoodSeen = food;
+        }
 
-        // Should have gathered some food along the way
-        Assert.True(alice.FoodInInventory() >= startFood,
-            $"Explorer should opportunistically gather. Start: {startFood}, Now: {alice.FoodInInventory()}");
+        // Explorer should have gathered food at some point (may deposit later, so check peak)
+        Assert.True(maxFoodSeen > startFood,
+            $"Explorer should opportunistically gather. Start: {startFood}, Peak: {maxFoodSeen}, Final: {alice.FoodInInventory()}");
     }
 }

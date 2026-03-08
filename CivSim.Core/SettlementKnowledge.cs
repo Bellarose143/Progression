@@ -695,11 +695,35 @@ public class SettlementKnowledge
 
     private static void PropagateToResidents(Settlement settlement, string discoveryId, List<Agent> allAgents)
     {
+        // Directive Fix 5: Propagate to listed residents AND to any alive agent whose
+        // HomeTile is within SettlementRadius of the settlement center.
+        // This fixes silent propagation failure when agents drift from their settlement
+        // (e.g., due to Socialize chase) and aren't in ResidentAgentIds at propagation time.
+        var propagated = new HashSet<int>();
+
+        // First pass: listed residents
         foreach (var agentId in settlement.ResidentAgentIds)
         {
             var resident = allAgents.FirstOrDefault(a => a.Id == agentId && a.IsAlive);
             if (resident != null && !resident.Knowledge.Contains(discoveryId))
+            {
                 resident.LearnDiscovery(discoveryId);
+                propagated.Add(agentId);
+            }
+        }
+
+        // Second pass: agents whose HomeTile is near the settlement center
+        foreach (var agent in allAgents)
+        {
+            if (!agent.IsAlive || propagated.Contains(agent.Id)) continue;
+            if (!agent.HomeTile.HasValue) continue;
+            if (agent.Knowledge.Contains(discoveryId)) continue;
+
+            int distHome = Math.Max(
+                Math.Abs(agent.HomeTile.Value.X - settlement.CenterX),
+                Math.Abs(agent.HomeTile.Value.Y - settlement.CenterY));
+            if (distHome <= SimConfig.SettlementRadius)
+                agent.LearnDiscovery(discoveryId);
         }
     }
 

@@ -75,7 +75,7 @@ public class ModeTransitionTests
     {
         var sim = new TestSimBuilder()
             .GridSize(32, 32).Seed(1)
-            .AddAgent("Alice", isMale: false, hunger: 20f, health: 25)
+            .AddAgent("Alice", isMale: false, hunger: 20f, health: 15)
             .AgentAt("Alice", 0, 0)
             .AgentHome("Alice", 0, 0)
             .ShelterAt(0, 0)
@@ -109,6 +109,9 @@ public class ModeTransitionTests
             .ResourceAt(5, 0, ResourceType.Berries, 30)
             .Build();
 
+        // D11 Fix 3: Start during daytime so night rest doesn't block foraging
+        sim.Simulation.CurrentTick = 150;
+
         // Give Alice food memory of the distant berries
         var alice = sim.GetAgent("Alice");
         var pos = sim.WorldPos(5, 0);
@@ -118,7 +121,7 @@ public class ModeTransitionTests
             Type = MemoryType.Resource,
             Resource = ResourceType.Berries,
             Quantity = 30,
-            TickObserved = 0
+            TickObserved = 150
         });
 
         // Run enough ticks for her to need food and find it via memory

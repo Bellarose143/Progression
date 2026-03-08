@@ -1,0 +1,12 @@
+{
+  "wood": { "sprite": "tree.png", "width": 32, "height": 40, "anchor": "bottom_center" },
+  "stone": { "sprite": "stone.png", "width": 24, "height": 24, "anchor": "center" },
+  "berries": { "sprite": "berry_bush.png", "width": 28, "height": 28, "anchor": "center" },
+  "ore": { "sprite": "ore.png", "width": 24, "height": 24, "anchor": "center" },
+  "grain": { "sprite": "grain.png", "width": 24, "height": 32, "anchor": "bottom_center" },
+  "meat": { "sprite": "meat.png", "width": 20, "height": 20, "anchor": "center" },
+  "fish": { "sprite": "fish.png", "width": 20, "height": 16, "anchor": "center" },
+  "hide": { "sprite": "hide.png", "width": 20, "height": 20, "anchor": "center" },
+  "bone": { "sprite": "bone.png", "width": 20, "height": 20, "anchor": "center" },
+  "preservedfood": { "sprite": "preserved_food.png", "width": 20, "height": 20, "anchor": "center" }
+}

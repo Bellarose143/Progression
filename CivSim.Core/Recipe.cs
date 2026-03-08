@@ -149,7 +149,7 @@ public static class RecipeRegistry
         new Recipe
         {
             Id = "bone_tools", Name = "Bone Tools", Tier = 2, Branch = "Tools",
-            RequiredResources = new() { { ResourceType.Animals, 2 } },
+            RequiredResources = new() { { ResourceType.Bone, 2 } },
             RequiredKnowledge = new() { "stone_knife" },
             BaseChance = 0.12f,
             Output = "bone_tools",
@@ -161,7 +161,7 @@ public static class RecipeRegistry
         new Recipe
         {
             Id = "cooking", Name = "Cooking", Tier = 2, Branch = "Fire",
-            RequiredResources = new() { { ResourceType.Animals, 1 } },
+            RequiredResources = new() { { ResourceType.Meat, 1 } },
             RequiredKnowledge = new() { "fire" },
             BaseChance = 0.20f,
             Output = "cooking",
@@ -217,6 +217,16 @@ public static class RecipeRegistry
             Effects = new() { "All gathering 2.0x", "Wood gathering 2.5x", "Enables heavy construction" },
             Description = "Stone heads lashed to wooden handles. The breakthrough."
         },
+        new Recipe
+        {
+            Id = "spear", Name = "Spear", Tier = 3, Branch = "Tools",
+            RequiredResources = new() { { ResourceType.Wood, 2 }, { ResourceType.Stone, 1 } },
+            RequiredKnowledge = new() { "hafted_tools" },
+            BaseChance = 0.10f,
+            Output = "spear",
+            Effects = new() { "Ranged melee weapon", "Enables hunting Boar", "Hunt success +15% for all prey" },
+            Description = "A sharpened point on a long shaft. The first weapon."
+        },
 
         // Era 3: Settlement — Branch 2: Fire & Heat
         new Recipe
@@ -244,7 +254,7 @@ public static class RecipeRegistry
         new Recipe
         {
             Id = "food_preservation", Name = "Food Preservation", Tier = 3, Branch = "Food",
-            RequiredResources = new() { { ResourceType.Animals, 2 } },
+            RequiredResources = new() { { ResourceType.Meat, 2 } },
             RequiredKnowledge = new() { "cooking" },
             BaseChance = 0.12f,
             Output = "food_preservation",
@@ -253,12 +263,22 @@ public static class RecipeRegistry
         },
         new Recipe
         {
+            Id = "trapping", Name = "Trapping", Tier = 3, Branch = "Food",
+            RequiredResources = new() { { ResourceType.Wood, 2 }, { ResourceType.Hide, 1 } },
+            RequiredKnowledge = new() { "stone_knife", "foraging_knowledge" },
+            BaseChance = 0.08f,
+            Output = "trapping",
+            Effects = new() { "Passive hunting", "Place traps to catch Rabbit-class prey automatically" },
+            Description = "Simple snares and deadfalls for catching small game."
+        },
+        new Recipe
+        {
             Id = "animal_domestication", Name = "Animal Domestication", Tier = 3, Branch = "Food",
-            RequiredResources = new() { { ResourceType.Animals, 3 } },
+            RequiredResources = new() { { ResourceType.Meat, 3 } },
             RequiredKnowledge = new() { "farming", "lean_to" },
             BaseChance = 0.06f,
             Output = "animal_domestication",
-            Effects = new() { "Penned animals near settlement don't despawn" },
+            Effects = new() { "Enables Tame action", "Enables Pen building", "Enables Slaughter", "Enables Pen feeding" },
             Description = "Taming and breeding animals for sustainable food."
         },
         new Recipe
@@ -309,6 +329,16 @@ public static class RecipeRegistry
             Output = "quarrying_tools",
             Effects = new() { "Stone gathering 2.5x", "Enables efficient quarrying" },
             Description = "Chisels, wedges, and hammers for cutting stone."
+        },
+        new Recipe
+        {
+            Id = "bow", Name = "Bow", Tier = 4, Branch = "Tools",
+            RequiredResources = new() { { ResourceType.Wood, 3 }, { ResourceType.Hide, 1 } },
+            RequiredKnowledge = new() { "spear", "weaving" },
+            BaseChance = 0.06f,
+            Output = "bow",
+            Effects = new() { "Ranged weapon", "Enables hunting Wolf", "Hunt success +25% for all prey" },
+            Description = "A flexible stave and string for launching projectiles at distance."
         },
 
         // Era 4: Community — Branch 2: Fire & Heat

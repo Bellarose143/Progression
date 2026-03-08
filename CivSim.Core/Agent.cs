@@ -45,6 +45,9 @@ public class Agent
 {
     private static int _nextId = 1;
 
+    /// <summary>Reset the static ID counter. Used by integration tests to ensure deterministic behavior.</summary>
+    public static void ResetIdCounter() => _nextId = 1;
+
     // ── Identity ───────────────────────────────────────────────────────
     public int Id { get; }
     public string Name { get; set; }
@@ -55,6 +58,9 @@ public class Agent
 
     /// <summary>0 = dead, 100 = perfect health.</summary>
     public int Health { get; set; }
+
+    /// <summary>D19: Restlessness motivation. 0 = satisfied, 100 = very restless. Drives productive action scoring.</summary>
+    public float Restlessness { get; set; }
 
     /// <summary>Age in ticks since birth. GDD v1.8: 13440 ticks = 1 year (480 ticks/sim-day × 28 sim-days/year).</summary>
     public int Age { get; set; }
@@ -74,6 +80,13 @@ public class Agent
     public int X { get; set; }
     public int Y { get; set; }
 
+    // ── D26: Move interpolation metadata (renderer-only, no sim behavior change) ──
+    public int MoveStartTick { get; set; }
+    public int MoveEndTick { get; set; }
+    public (int X, int Y) MoveOrigin { get; set; }
+    public (int X, int Y) MoveDestination { get; set; }
+    public bool IsMoving { get; set; }
+
     // ── Knowledge & Discovery ──────────────────────────────────────────
     /// <summary>Set of discovery IDs this agent has unlocked.</summary>
     public HashSet<string> Knowledge { get; }
@@ -92,6 +105,16 @@ public class Agent
 
     /// <summary>Ticks remaining before this agent can reproduce again.</summary>
     public int ReproductionCooldownRemaining { get; set; }
+
+    /// <summary>Directive #9: Set to true after child→adult maturation transition fires.
+    /// Prevents the maturation reset from running more than once.</summary>
+    public bool HasMatured { get; set; }
+
+    /// <summary>D24 Fix 3: Whether this agent is in the new-adult bootstrap window.</summary>
+    public bool IsNewAdult { get; set; }
+
+    /// <summary>D24 Fix 3: Ticks remaining in the new-adult bootstrap window.</summary>
+    public int NewAdultTicksRemaining { get; set; }
 
     // ── Multi-Tick Action State ──────────────────────────────────────
     /// <summary>The multi-tick action currently in progress, or null if idle.</summary>
@@ -131,6 +154,31 @@ public class Agent
     /// <summary>Agent ID of a collaborate/interact target.</summary>
     public int? ActionTargetAgentId { get; set; }
 
+    /// <summary>D25b: The specific animal entity this agent is pursuing during Hunt.</summary>
+    public int? HuntTargetAnimalId { get; set; }
+
+    /// <summary>D25b: Ticks spent in active pursuit of fleeing prey.</summary>
+    public int HuntPursuitTicks { get; set; }
+
+    // D25c: Combat fields
+    public int? CombatTargetAnimalId { get; set; }
+    public int CombatTicksRemaining { get; set; }
+    public bool IsInCombat => CombatTargetAnimalId.HasValue;
+
+    // D25d: Domestication fields
+    public int? TameTargetAnimalId { get; set; }    // Animal entity this agent is currently taming
+
+    /// <summary>D25d: Check if this agent has a living dog companion (not penned).</summary>
+    public bool HasDogCompanion(IReadOnlyList<Animal> animals)
+    {
+        foreach (var a in animals)
+        {
+            if (a.IsAlive && a.IsDog && a.OwnerAgentId == Id && !a.PenId.HasValue)
+                return true;
+        }
+        return false;
+    }
+
     // ── Behavioral Mode (v1.8 Behavioral Modes) ────────────────────────
     /// <summary>v1.8: The agent's current behavioral mode. Always exactly one.</summary>
     public BehaviorMode CurrentMode { get; set; } = BehaviorMode.Home;
@@ -144,11 +192,23 @@ public class Agent
     /// <summary>v1.8: Committed targets for the current mode (forage target, build project, explore direction).</summary>
     public ModeCommitment ModeCommit { get; } = new();
 
+    // Fix B6: Saved build project that persists across Build→Forage→Home transitions.
+    // Set when Build mode exits to Forage for materials; cleared when project completes or agent re-enters Build.
+    public string? SavedBuildRecipeId { get; set; }
+    public (int X, int Y)? SavedBuildTargetTile { get; set; }
+
     /// <summary>v1.8: Transitions to a new mode, clearing committed state and recording entry tick.</summary>
     public void TransitionMode(BehaviorMode newMode, int currentTick)
     {
         if (newMode == BehaviorMode.Urgent && CurrentMode != BehaviorMode.Urgent)
             PreviousMode = CurrentMode;
+
+        // Reset explore stuck counters on mode exit
+        if (CurrentMode == BehaviorMode.Explore && newMode != BehaviorMode.Explore)
+        {
+            ExploreStuckTicks = 0;
+            ExploreWaterBlockedTicks = 0;
+        }
 
         CurrentMode = newMode;
         ModeEntryTick = currentTick;
@@ -168,22 +228,87 @@ public class Agent
     /// <summary>Recipe ID associated with the goal (for build goals).</summary>
     public string? GoalRecipeId { get; set; }
 
-    /// <summary>Tick when the current goal was set. Used for stale goal detection.</summary>
-    public int GoalStartTick { get; set; }
+    /// <summary>Tick when the current goal was set. Used for stale goal detection.
+    /// Setting this also captures GoalSetX/GoalSetY for stuck detection.</summary>
+    private int _goalStartTick;
+    public int GoalStartTick
+    {
+        get => _goalStartTick;
+        set
+        {
+            _goalStartTick = value;
+            GoalSetX = X;
+            GoalSetY = Y;
+        }
+    }
+
+    /// <summary>Agent position when current goal was created. Used by ClearGoal to detect stuck agents.</summary>
+    public int GoalSetX { get; private set; }
+    public int GoalSetY { get; private set; }
 
     /// <summary>Clears all goal state, forcing full re-evaluation next tick.</summary>
     public void ClearGoal()
     {
+        // D18.2 Fix 1: Only reset escalating pathfinding state if the agent actually
+        // moved since the goal was set. If they haven't moved, they're stuck — preserve
+        // MoveFailCount so the escalating pathfinder can advance to more aggressive strategies.
+        // Must check BEFORE setting GoalStartTick=0 (which updates GoalSetX/GoalSetY via setter).
+        bool hasMoved = X != GoalSetX || Y != GoalSetY;
+
         CurrentGoal = null;
         GoalTarget = null;
         GoalResource = null;
         GoalRecipeId = null;
         GoalStartTick = 0;
+        WaypointPath = null;
+        WaypointIndex = 0;
+
+        if (hasMoved)
+        {
+            MoveFailCount = 0;
+            RecoveryStartDistanceToGoal = 0f;
+            RecoveryWaypoints = null;
+        }
+    }
+
+    // ── Directive #7: Stuck Detection + Pathfinding ──────────────────
+    /// <summary>Counts consecutive ticks where agent has a Move goal but hasn't made real progress.</summary>
+    public int StuckCounter { get; set; }
+
+    /// <summary>Ring buffer of last 5 positions, used for oscillation detection.</summary>
+    public (int X, int Y)[] RecentPositions { get; } = new (int, int)[5];
+
+    /// <summary>Write index into RecentPositions ring buffer.</summary>
+    public int RecentPosIndex { get; set; }
+
+    /// <summary>Pre-computed A* waypoint path for ReturnHome goals. Null if using greedy movement.</summary>
+    public List<(int X, int Y)>? WaypointPath { get; set; }
+
+    /// <summary>Current index into WaypointPath.</summary>
+    public int WaypointIndex { get; set; }
+
+    /// <summary>Records current position into the recent positions ring buffer.</summary>
+    public void RecordPosition()
+    {
+        RecentPositions[RecentPosIndex] = (X, Y);
+        RecentPosIndex = (RecentPosIndex + 1) % RecentPositions.Length;
+    }
+
+    /// <summary>Returns true if the given position is already in the recent positions buffer.</summary>
+    public bool IsPositionRecent(int x, int y)
+    {
+        for (int i = 0; i < RecentPositions.Length; i++)
+            if (RecentPositions[i].X == x && RecentPositions[i].Y == y)
+                return true;
+        return false;
     }
 
     // ── Memory ─────────────────────────────────────────────────────────
     /// <summary>Short-term memory buffer populated by Perceive(), decayed each tick.</summary>
     public List<MemoryEntry> Memory { get; }
+
+    /// <summary>D25b: Separate animal/carcass sighting memory — isolated from main Memory to prevent RNG cascade.</summary>
+    public List<MemoryEntry> AnimalMemory { get; } = new();
 
     /// <summary>GDD v1.7.2: Permanent landmark memory — structures never forgotten once seen.
     /// Does not decay, does not count against MemoryMaxEntries. (X, Y, StructureType).</summary>
@@ -225,6 +350,19 @@ public class Agent
     /// <summary>Relationship types to other agents (spouse, parent, child, sibling).</summary>
     public Dictionary<int, RelationshipType> Relationships { get; } = new();
 
+    // ── Directive #5 Fix 1: Socialize Cooldown & Diminishing Returns ──
+    /// <summary>Tick when the agent last completed a Socialize action. Used for cooldown multiplier.</summary>
+    public int LastSocializedTick { get; set; }
+
+    /// <summary>Number of Socialize completions today. Reset at dawn. Used for daily diminishing returns.</summary>
+    public int SocializeCountToday { get; set; }
+
+    /// <summary>Per-partner Socialize count this sim-day. Reset at dawn. Cap of 3 per partner per day.</summary>
+    public Dictionary<int, int> SocializePartnerCountToday { get; } = new();
+
+    /// <summary>Tick of last dawn reset for SocializeCountToday.</summary>
+    public int LastSocializeDawnResetTick { get; set; }
+
     // ── GDD v1.7.1: Action Dampening ──────────────────────────────────
     /// <summary>GDD v1.7.1: Last utility action chosen (for dampening consecutive same-action). Null when not set.</summary>
     public ActionType? LastChosenUtilityAction { get; set; }
@@ -234,6 +372,131 @@ public class Agent
 
     /// <summary>Consecutive ticks in P2 food-seek without eating. Triggers explore escape at threshold.</summary>
     public int ConsecutiveFoodSeekTicks { get; set; }
+
+    // ── Directive #10 Fix 1: Move chain re-evaluation ────────────────
+    /// <summary>Counts consecutive Move steps within a move chain. Reset on non-Move actions.</summary>
+    public int ConsecutiveMoveCount { get; set; }
+
+    /// <summary>When true, forces a full decision re-evaluation on next tick (set by move chain checkpoint).</summary>
+    public bool ForceReevaluation { get; set; }
+
+    // ── Directive #10 Fix 2: Stuck detection for eat override ────────
+    /// <summary>Ticks the agent has been at the same position despite having a Move pending.</summary>
+    public int StuckAtPositionCount { get; set; }
+
+    /// <summary>Last recorded position for stuck detection.</summary>
+    public (int X, int Y) LastStuckCheckPos { get; set; }
+
+    /// <summary>True if agent has been stuck for 3+ ticks (position unchanged despite Move goal).</summary>
+    public bool IsStuck => StuckAtPositionCount >= 3;
+
+    // ── Post-Playtest Fix 1: Safety-return suppression when stuck ───
+    /// <summary>Tick until which safety-return-home is suppressed (allows local survival after move failures).</summary>
+    public int SafetyReturnSuppressedUntil { get; set; }
+
+    // ── Directive #11 Fix 1: Move failure counter ───────────────────
+    /// <summary>Consecutive MoveTo failures. Reset on successful move or non-Move action.</summary>
+    public int MoveFailCount { get; set; }
+
+    /// <summary>Distance to home when recovery tracking started. Used to detect progress.</summary>
+    public int RecoveryStartDistanceToHome { get; set; }
+
+    /// <summary>Ticks spent in Stage 4 random walk. After 10-20 ticks, resets to Stage 1.</summary>
+    public int RandomWalkTickCount { get; set; }
+
+    /// <summary>Distance to goal target when recovery started. Used to detect progress toward any goal (not just home).</summary>
+    public float RecoveryStartDistanceToGoal { get; set; }
+
+    /// <summary>A* computed waypoints for Stage 2 recovery. Consumed one at a time.</summary>
+    public List<(int X, int Y)>? RecoveryWaypoints { get; set; }
+
+    /// <summary>Computed recovery stage based on MoveFailCount.
+    /// Stage 1 (1-3): Normal A*. Stage 2 (4-10): Doubled node budget.
+    /// Stage 3 (11-20): Greedy single-tile steps. Stage 4 (21+): Emergency.</summary>
+    public int StuckRecoveryStage
+    {
+        get
+        {
+            if (MoveFailCount <= 3) return 1;
+            if (MoveFailCount <= 10) return 2;
+            if (MoveFailCount <= 20) return 3;
+            return 4;
+        }
+    }
+
+    // ── D19: Restlessness Statistics ────────────────────────────
+    public float PeakRestlessness { get; set; }
+    public float RestlessnessSum { get; set; }
+    public int RestlessnessSampleCount { get; set; }
+    public int RestlessnessAbove50Ticks { get; set; }
+
+    // ── Directive #12 Fix 1: Tile blacklist ──────────────────────────
+    /// <summary>Tiles blacklisted due to repeated pathfinding failures. (x, y, expiryTick).</summary>
+    private readonly List<(int X, int Y, int ExpiryTick)> _blacklistedTiles = new();
+
+    /// <summary>Blacklist a tile for the given duration. Agent will avoid selecting it as a target.</summary>
+    public void BlacklistTile(int x, int y, int expiryTick)
+    {
+        // Don't duplicate — update existing entry if present
+        for (int i = 0; i < _blacklistedTiles.Count; i++)
+        {
+            if (_blacklistedTiles[i].X == x && _blacklistedTiles[i].Y == y)
+            {
+                _blacklistedTiles[i] = (x, y, Math.Max(_blacklistedTiles[i].ExpiryTick, expiryTick));
+                return;
+            }
+        }
+        _blacklistedTiles.Add((x, y, expiryTick));
+    }
+
+    /// <summary>Returns true if the tile is currently blacklisted.</summary>
+    public bool IsTileBlacklisted(int x, int y, int currentTick)
+    {
+        for (int i = _blacklistedTiles.Count - 1; i >= 0; i--)
+        {
+            if (_blacklistedTiles[i].ExpiryTick <= currentTick)
+            {
+                _blacklistedTiles.RemoveAt(i); // Prune expired
+                continue;
+            }
+            if (_blacklistedTiles[i].X == x && _blacklistedTiles[i].Y == y)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>D20 Fix 1: Returns all currently-blacklisted tile coordinates as a HashSet
+    /// for passing to SimplePathfinder.FindPath. Prunes expired entries.</summary>
+    public HashSet<(int X, int Y)> GetBlacklistedTileSet(int currentTick)
+    {
+        var result = new HashSet<(int X, int Y)>();
+        for (int i = _blacklistedTiles.Count - 1; i >= 0; i--)
+        {
+            if (_blacklistedTiles[i].ExpiryTick <= currentTick)
+            {
+                _blacklistedTiles.RemoveAt(i);
+                continue;
+            }
+            result.Add((_blacklistedTiles[i].X, _blacklistedTiles[i].Y));
+        }
+        return result;
+    }
+
+    // ── Directive #10 Fix 4: DepositHome cooldown ────────────────────
+    /// <summary>Tick when the agent last completed a DepositHome action.</summary>
+    public int LastDepositTick { get; set; }
+
+    // ── Directive #10 Fix 3: Forage mode entry tick ──────────────────
+    /// <summary>Tick when agent entered Forage mode. Used for minimum commitment window.</summary>
+    public int ForageModeEntryTick { get; set; }
+
+    // ── Directive #12 Fix 2: Forage gather decision counter ──────────
+    /// <summary>Number of successful Gather completions during current Forage trip.</summary>
+    public int ForageGatherCount { get; set; }
+
+    // ── Directive #12 Fix 5: Curiosity ramp ─────────────────────────
+    /// <summary>Tick when the agent's settlement last made a discovery. Used for curiosity bonus.</summary>
+    public int LastSettlementDiscoveryTick { get; set; }
 
     // ── Action History (GDD v1.7) ────────────────────────────────────
     /// <summary>Ring buffer of recent actions for death report UI. Capacity = ActionHistorySize (10).</summary>
@@ -262,16 +525,134 @@ public class Agent
     /// <summary>Accumulates fractional starvation damage. When >= 1.0, applies 1 HP damage.</summary>
     public float StarvationDamageAccumulator { get; set; }
 
+    // ── Explore Blacklist (Fix 5: Explore Direction Safety) ──────────
+    /// <summary>Positions blacklisted during explore due to stuck detection.
+    /// Key = (X, Y), Value = tick when blacklist expires.</summary>
+    private readonly Dictionary<(int, int), int> _exploreBlacklist = new();
+
+    /// <summary>Consecutive ticks the agent has been stuck during Explore mode.</summary>
+    public int ExploreStuckTicks { get; set; }
+
+    /// <summary>Consecutive ticks the committed explore direction was blocked by water.
+    /// When this reaches a threshold, the agent aborts explore — the direction leads into water.</summary>
+    public int ExploreWaterBlockedTicks { get; set; }
+
+    /// <summary>D24 Fix 1B: Recently explored directions (last 3 trips). Used for cooldown scoring.</summary>
+    public List<(int Dx, int Dy)> RecentExploreDirections { get; } = new();
+
+    /// <summary>D24 Fix 1B: Tick of last explore trip end. Used for direction memory decay.</summary>
+    public int LastExploreTripEndTick { get; set; }
+
+    /// <summary>D24 Fix 1C: Agent position when Explore mode was entered. Used for budget waste detection.</summary>
+    public (int X, int Y)? ExploreStartPosition { get; set; }
+
+    /// <summary>Last Chebyshev-distance milestone (multiple of 5) at which return path was validated.</summary>
+    public int LastReturnPathCheckDistance { get; set; } = 0;
+
+    /// <summary>Blacklists a position so the agent avoids it during explore direction selection.</summary>
+    public void BlacklistPosition(int x, int y, int expiryTick)
+    {
+        _exploreBlacklist[(x, y)] = expiryTick;
+    }
+
+    /// <summary>Returns true if the given position is currently blacklisted.</summary>
+    public bool IsPositionBlacklisted(int x, int y, int currentTick)
+    {
+        if (_exploreBlacklist.TryGetValue((x, y), out int expiry))
+        {
+            if (currentTick < expiry) return true;
+            _exploreBlacklist.Remove((x, y)); // Expired — clean up
+        }
+        return false;
+    }
+
+    /// <summary>Returns the explore blacklist (read-only access for direction selection).</summary>
+    public IReadOnlyDictionary<(int, int), int> ExploreBlacklist => _exploreBlacklist;
+
+    // ── Run Summary Tracking (lightweight per-tick counters) ──────────
+    /// <summary>Per-action-type tick counter for run summary. Incremented each tick based on CurrentAction.</summary>
+    public Dictionary<ActionType, int> ActionTickCounts { get; } = new();
+
+    /// <summary>Per-mode tick counter for run summary. Incremented each tick based on CurrentMode.</summary>
+    public Dictionary<BehaviorMode, int> ModeTickCounts { get; } = new();
+
+    /// <summary>Number of distinct stuck episodes (StuckCounter crossed threshold).</summary>
+    public int StuckEpisodeCount { get; set; }
+
+    /// <summary>Total ticks spent stuck across all episodes.</summary>
+    public int TotalStuckTicks { get; set; }
+
+    /// <summary>Whether agent was stuck last tick (for episode boundary detection).</summary>
+    public bool WasStuckLastTick { get; set; }
+
+    /// <summary>Maximum Chebyshev distance from home tile observed during lifetime.</summary>
+    public int MaxDistanceFromHome { get; set; }
+
+    /// <summary>Tick when this agent was born (for birth record).</summary>
+    public int BirthTick { get; set; }
+
+    /// <summary>Parent 1 name (for birth record). Null for founding agents.</summary>
+    public string? Parent1Name { get; set; }
+
+    /// <summary>Parent 2 name (for birth record). Null for founding agents.</summary>
+    public string? Parent2Name { get; set; }
+
+    /// <summary>Increments per-tick tracking counters for action, mode, stuck, and distance from home.</summary>
+    public void UpdateSummaryCounters()
+    {
+        // Action distribution
+        ActionTickCounts.TryGetValue(CurrentAction, out int actionCount);
+        ActionTickCounts[CurrentAction] = actionCount + 1;
+
+        // Mode distribution
+        ModeTickCounts.TryGetValue(CurrentMode, out int modeCount);
+        ModeTickCounts[CurrentMode] = modeCount + 1;
+
+        // Stuck tracking
+        if (IsStuck)
+        {
+            TotalStuckTicks++;
+            if (!WasStuckLastTick)
+                StuckEpisodeCount++;
+            WasStuckLastTick = true;
+        }
+        else
+        {
+            WasStuckLastTick = false;
+        }
+
+        // Max distance from home
+        if (HomeTile.HasValue)
+        {
+            int dist = Math.Max(Math.Abs(X - HomeTile.Value.X), Math.Abs(Y - HomeTile.Value.Y));
+            if (dist > MaxDistanceFromHome)
+                MaxDistanceFromHome = dist;
+        }
+    }
+
+    /// <summary>D19: Track restlessness statistics per tick.</summary>
+    public void UpdateRestlessnessStats()
+    {
+        if (Restlessness > PeakRestlessness) PeakRestlessness = Restlessness;
+        RestlessnessSum += Restlessness;
+        RestlessnessSampleCount++;
+        if (Restlessness > 50f) RestlessnessAbove50Ticks++;
+    }
+
     // ── Day/Night and Rest ─────────────────────────────────────────────
     /// <summary>Tick when the agent last completed a rest cycle.</summary>
     public int LastRestTick { get; set; }
+
+    // ── Directive #6 Fix 3: Decision heartbeat monitor ────────────────
+    /// <summary>Tick when the agent last made a decision (any action chosen).
+    /// Used to detect stuck agents — gap > 100 ticks triggers forced re-evaluation.</summary>
+    public int LastDecisionTick { get; set; }
 
     /// <summary>Checks if it's nighttime based on the current tick.</summary>
     public static bool IsNightTime(int currentTick)
     {
         int hourOfDay = currentTick % SimConfig.TicksPerSimDay;
-        // Night = last 25% of day (360-480) and first 25% (0-120)
-        return hourOfDay >= 360 || hourOfDay < 120;
+        return hourOfDay >= SimConfig.NightStartHour || hourOfDay < SimConfig.NightEndHour;
     }
 
     /// <summary>Checks if the agent needs rest (nighttime + hasn't rested recently).</summary>
@@ -318,6 +699,8 @@ public class Agent
         Health = 100;
         Age = startingAge;
         IsAlive = true;
+        // D19: Newborns start calm; founders get RestlessnessFounderStart set by Simulation.SpawnAgent()
+        Restlessness = 0f;
         CurrentAction = ActionType.Idle;
         ReproductionCooldownRemaining = 0;
 
@@ -329,6 +712,10 @@ public class Agent
         ActionTargetResource = null;
         ActionTargetRecipe = null;
         ActionTargetAgentId = null;
+        HuntTargetAnimalId = null;
+        HuntPursuitTicks = 0;
+        CombatTargetAnimalId = null;
+        CombatTicksRemaining = 0;
 
         Knowledge = new HashSet<string>();
         Familiarity = new Dictionary<string, int>();
@@ -374,6 +761,19 @@ public class Agent
         ActionTargetResource = null;
         ActionTargetRecipe = null;
         ActionTargetAgentId = null;
+        HuntTargetAnimalId = null;
+        HuntPursuitTicks = 0;
+        CombatTargetAnimalId = null;
+        CombatTicksRemaining = 0;
+        IsMoving = false;
+    }
+
+    /// <summary>D26: Set move interpolation metadata for smooth rendering.</summary>
+    public void SetMoveInterpolation(int destX, int destY)
+    {
+        MoveOrigin = (X, Y);
+        MoveDestination = (destX, destY);
+        IsMoving = true;
     }
 
     /// <summary>Returns true if the agent is currently performing a multi-tick action.</summary>
@@ -420,13 +820,75 @@ public class Agent
         return InventoryCount() + amount <= capacity;
     }
 
+    /// <summary>
+    /// Centralized inventory add with global invariants.
+    /// Enforces: capacity limit, non-food cap (≥9 blocks), hunger gate (hunger &lt; 50 blocks non-food).
+    /// Returns true if item was added, false if blocked by any invariant.
+    /// Use enforceNonFoodGuards=false for paths that don't currently check non-food limits
+    /// (e.g., CompleteClearLand, TryDispatchBuild material withdrawal).
+    /// </summary>
+    public bool TryAddToInventory(ResourceType type, int amount, bool enforceNonFoodGuards = true)
+    {
+        if (amount <= 0) return false;
+
+        // Invariant 1: Capacity limit
+        if (!HasInventorySpace(amount)) return false;
+
+        // Non-food guards (Stone, Ore, Wood, Hide, Bone)
+        bool isNonFood = type == ResourceType.Stone || type == ResourceType.Ore || type == ResourceType.Wood
+                      || type == ResourceType.Hide || type == ResourceType.Bone;
+        if (enforceNonFoodGuards && isNonFood)
+        {
+            // Invariant 2: Non-food cap — block if carrying 9+ non-food items
+            int nonFoodCount = Inventory.GetValueOrDefault(ResourceType.Stone, 0)
+                             + Inventory.GetValueOrDefault(ResourceType.Ore, 0)
+                             + Inventory.GetValueOrDefault(ResourceType.Wood, 0)
+                             + Inventory.GetValueOrDefault(ResourceType.Hide, 0)
+                             + Inventory.GetValueOrDefault(ResourceType.Bone, 0);
+            if (nonFoodCount >= SimConfig.NonFoodInventoryHardCap) return false;
+
+            // Invariant 3: Hunger gate — hungry agents don't pick up non-food
+            if (Hunger < SimConfig.NonFoodPickupHungerGate) return false;
+        }
+
+        // Add to inventory
+        Inventory[type] = Inventory.GetValueOrDefault(type, 0) + amount;
+        return true;
+    }
+
+    /// <summary>
+    /// D22 Fix 3: Centralized eat-from-home-storage.
+    /// Checks if the tile has home storage with food, withdraws 1 item, and applies hunger restoration.
+    /// Returns true if the agent ate. Callers handle logging/events.
+    /// </summary>
+    public bool TryEatFromHomeStorage(Tile homeTile)
+    {
+        if (!homeTile.HasHomeStorage || homeTile.HomeTotalFood <= 0)
+            return false;
+
+        var (wType, wAmount) = homeTile.WithdrawAnyFoodFromHome(1);
+        if (wAmount <= 0) return false;
+
+        int restore = wType == ResourceType.PreservedFood ? SimConfig.FoodRestorePreserved : SimConfig.FoodRestoreRaw;
+        Hunger = Math.Min(100f, Hunger + restore);
+        return true;
+    }
+
+    /// <summary>Returns true if agent knows lean_to or improved_shelter.</summary>
+    public bool KnowsAnyShelterRecipe() =>
+        Knowledge.Contains("lean_to") || Knowledge.Contains("improved_shelter");
+
+    /// <summary>Returns true if the agent has Wood in inventory.</summary>
+    public bool HasWoodInInventory() =>
+        Inventory.TryGetValue(ResourceType.Wood, out int w) && w > 0;
+
     /// <summary>Returns total food (Berries + Grain + Animals + Fish + PreservedFood) in inventory.</summary>
     public int FoodInInventory()
     {
         int total = 0;
         if (Inventory.TryGetValue(ResourceType.Berries, out int b)) total += b;
         if (Inventory.TryGetValue(ResourceType.Grain, out int g)) total += g;
-        if (Inventory.TryGetValue(ResourceType.Animals, out int a)) total += a;
+        if (Inventory.TryGetValue(ResourceType.Meat, out int mt)) total += mt;
         if (Inventory.TryGetValue(ResourceType.Fish, out int f)) total += f;
         if (Inventory.TryGetValue(ResourceType.PreservedFood, out int p)) total += p;
         return total;
@@ -487,9 +949,9 @@ public class Agent
                 float regen;
                 bool inShelter = currentTile?.HasShelter ?? false;
 
-                if (CurrentAction == ActionType.Rest && inShelter)
+                if ((CurrentAction == ActionType.Rest || CurrentAction == ActionType.GrowingUp) && inShelter)
                     regen = SimConfig.HealthRegenShelter;
-                else if (CurrentAction == ActionType.Rest)
+                else if (CurrentAction == ActionType.Rest || CurrentAction == ActionType.GrowingUp)
                     regen = SimConfig.HealthRegenResting;
                 else
                     regen = SimConfig.HealthRegenBase;
@@ -543,7 +1005,7 @@ public class Agent
     /// Kills the agent and drops inventory to the specified tile (if provided).
     /// GDD v1.7: Accepts cause and tick for death report system.
     /// </summary>
-    public void Die(Tile? tile, string cause = "unknown", int tick = -1)
+    public void Die(Tile? tile, string cause = "unknown", int tick = -1, World? world = null)
     {
         if (!IsAlive) return;
 
@@ -562,6 +1024,10 @@ public class Agent
                 if (!tile.Resources.ContainsKey(kvp.Key))
                     tile.Resources[kvp.Key] = 0;
                 tile.Resources[kvp.Key] += kvp.Value;
+
+                // Update world food counter for food items returned to tile
+                if (world != null && ModeTransitionManager.IsFoodResource(kvp.Key))
+                    world.AdjustWorldFood(kvp.Value);
             }
         }
         Inventory.Clear();
@@ -630,7 +1096,7 @@ public class Agent
             return true;
         }
 
-        ResourceType[] foodTypes = { ResourceType.Berries, ResourceType.Grain, ResourceType.Animals, ResourceType.Fish };
+        ResourceType[] foodTypes = { ResourceType.Berries, ResourceType.Grain, ResourceType.Meat, ResourceType.Fish };
 
         foreach (var food in foodTypes)
         {
@@ -656,7 +1122,7 @@ public class Agent
     /// </summary>
     public bool HasCookableFood()
     {
-        ResourceType[] cookable = { ResourceType.Animals, ResourceType.Fish, ResourceType.Grain };
+        ResourceType[] cookable = { ResourceType.Meat, ResourceType.Fish, ResourceType.Grain };
         return cookable.Any(f => Inventory.TryGetValue(f, out int amt) && amt > 0);
     }
 
@@ -674,7 +1140,7 @@ public class Agent
     /// Gathers a specific resource type from a tile, respecting efficiency and inventory capacity.
     /// Returns the amount gathered. Used as the completion step of the multi-tick gather action.
     /// </summary>
-    public int GatherFrom(Tile tile, ResourceType resource, int baseAmount = 3)
+    public int GatherFrom(Tile tile, ResourceType resource, int baseAmount = 3, World? world = null)
     {
         if (!IsAlive) return 0;
         if (!tile.Resources.TryGetValue(resource, out int available) || available <= 0)
@@ -701,15 +1167,34 @@ public class Agent
 
         if (effectiveAmount <= 0) return 0;
 
-        // Remove from tile
+        // D24: Hard-cap non-food at gather completion (safety net — callers should check,
+        // but multi-tick gathers can accumulate past the cap between dispatch and completion)
+        if (resource == ResourceType.Stone || resource == ResourceType.Ore || resource == ResourceType.Wood
+            || resource == ResourceType.Hide || resource == ResourceType.Bone)
+        {
+            int nonFoodNow = Inventory.GetValueOrDefault(ResourceType.Stone, 0)
+                           + Inventory.GetValueOrDefault(ResourceType.Ore, 0)
+                           + Inventory.GetValueOrDefault(ResourceType.Wood, 0)
+                           + Inventory.GetValueOrDefault(ResourceType.Hide, 0)
+                           + Inventory.GetValueOrDefault(ResourceType.Bone, 0);
+            int room = SimConfig.NonFoodInventoryHardCap - nonFoodNow;
+            if (room <= 0) return 0;
+            effectiveAmount = Math.Min(effectiveAmount, room);
+        }
+
+        // D22: Route through TryAddToInventory for centralized add.
+        // enforceNonFoodGuards=false: no hunger gate here (applied at dispatch, not completion).
+        if (!TryAddToInventory(resource, effectiveAmount, enforceNonFoodGuards: false))
+            return 0;
+
+        // Remove from tile (after successful inventory add to prevent resource loss)
         tile.Resources[resource] -= effectiveAmount;
         if (tile.Resources[resource] <= 0)
             tile.Resources.Remove(resource);
 
-        // Add to inventory
-        if (!Inventory.ContainsKey(resource))
-            Inventory[resource] = 0;
-        Inventory[resource] += effectiveAmount;
+        // Update world food counter
+        if (world != null && ModeTransitionManager.IsFoodResource(resource))
+            world.AdjustWorldFood(-effectiveAmount);
 
         CurrentAction = ActionType.Gather;
         LastGatheredResource = resource;
@@ -759,11 +1244,37 @@ public class Agent
         if (!world.IsInBounds(newX, newY))
             return false;
 
+        // Directive #5 Fix 5: Teleportation guard — no agent should ever move > 2 tiles per tick.
+        // A jump of 97 tiles (seed 5005) indicates an uninitialized position or array index bug.
+        int dx = Math.Abs(newX - X), dy = Math.Abs(newY - Y);
+        if (dx > 2 || dy > 2)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[TELEPORT GUARD] Agent {Id} ({Name}) attempted teleport from ({X},{Y}) to ({newX},{newY}) — rejected (delta {dx},{dy})");
+            return false;
+        }
+
         var targetTile = world.GetTile(newX, newY);
 
         // Impassable terrain check
         if (float.IsPositiveInfinity(targetTile.MovementCostMultiplier))
             return false;
+
+        // Mode-aware hard distance ceiling from home.
+        // Explore: ExploreMaxRange, Forage: ForageMaxRange, others: HardMoveCeiling.
+        // D15 Fix: Allow moves that DECREASE distance (walking home) even past the ceiling.
+        if (HomeTile.HasValue)
+        {
+            int currentDist = Math.Max(Math.Abs(X - HomeTile.Value.X), Math.Abs(Y - HomeTile.Value.Y));
+            int newDist = Math.Max(Math.Abs(newX - HomeTile.Value.X), Math.Abs(newY - HomeTile.Value.Y));
+            int moveLimit = CurrentMode == BehaviorMode.Explore ? SimConfig.ExploreMaxRange
+                : CurrentMode == BehaviorMode.Forage ? SimConfig.ForageMaxRange
+                : SimConfig.HardMoveCeiling;
+            if (newDist > moveLimit && newDist >= currentDist)
+            {
+                return false;
+            }
+        }
 
         // GDD v1.6.2: Incremental spatial index update
         int oldX = X, oldY = Y;
@@ -771,6 +1282,7 @@ public class Agent
         Y = newY;
         world.UpdateAgentPosition(this, oldX, oldY, newX, newY);
         CurrentAction = ActionType.Move;
+        IsMoving = false; // D26: Move complete, position updated
 
         // Movement hunger cost: extra drain from difficult terrain
         float extraDrain = (float)Math.Round((targetTile.MovementCostMultiplier - 1.0f) * SimConfig.MovementHungerCostScale);
@@ -968,10 +1480,16 @@ public class Agent
                 childTraits[i] = parentPool[r.Next(parentPool.Length)]; // Inherit
         }
 
-        // Create child with inherited traits and gendered name
-        var child = new Agent(X, Y, traits: childTraits, rng: r, livingNames: livingNames);
+        // Fix 3: Create child at HomeTile (not parent's current position — prevents off-tile spawn bug)
+        int childX = HomeTile.HasValue ? HomeTile.Value.X : X;
+        int childY = HomeTile.HasValue ? HomeTile.Value.Y : Y;
+        var child = new Agent(childX, childY, traits: childTraits, rng: r, livingNames: livingNames);
         child.Hunger = 80f; // Child starts slightly hungry per GDD
         child.Age = 0;
+
+        // Birth record tracking for run summary
+        child.Parent1Name = Name;
+        child.Parent2Name = partner.Name;
 
         // GDD v1.7.1: Child inherits parent's HomeTile
         child.HomeTile = HomeTile;
@@ -1101,7 +1619,11 @@ public class Agent
 
         if (doActiveScan)
         {
-            ScanRadius(world, currentTick, SimConfig.PerceptionRadius);
+            // D25d: Dog companion extends active perception radius
+            int activeRadius = SimConfig.PerceptionRadius;
+            if (HasDogCompanion(world.Animals))
+                activeRadius += SimConfig.DogPerceptionBonus;
+            ScanRadius(world, currentTick, activeRadius);
             LastActivePerceptionTick = currentTick;
         }
     }
@@ -1120,12 +1642,18 @@ public class Agent
 
                 var tile = world.GetTile(tx, ty);
 
+                // D24 Fix 2B: Don't memorize resources on impassable tiles (e.g., fish on water)
+                bool tilePassable = !float.IsPositiveInfinity(tile.MovementCostMultiplier);
+
                 // Record resources
-                foreach (var kvp in tile.Resources)
+                if (tilePassable)
                 {
-                    if (kvp.Value <= 0) continue;
-                    UpdateOrAddMemory(tx, ty, MemoryType.Resource, currentTick,
-                        resource: kvp.Key, quantity: kvp.Value);
+                    foreach (var kvp in tile.Resources)
+                    {
+                        if (kvp.Value <= 0) continue;
+                        UpdateOrAddMemory(tx, ty, MemoryType.Resource, currentTick,
+                            resource: kvp.Key, quantity: kvp.Value);
+                    }
                 }
 
                 // Record structures
@@ -1144,6 +1672,29 @@ public class Agent
                     if (other.Id == Id || !other.IsAlive) continue;
                     UpdateOrAddMemory(tx, ty, MemoryType.AgentSighting, currentTick,
                         agentId: other.Id);
+                }
+
+                // D25b: Record animal sightings into separate AnimalMemory (isolated from main Memory)
+                if (tilePassable)
+                {
+                    var animals = world.GetAnimalsAt(tx, ty);
+                    foreach (var animal in animals)
+                    {
+                        if (!animal.IsAlive) continue;
+                        if (animal.State == AnimalState.Fleeing) continue;
+                        UpdateOrAddAnimalMemory(tx, ty, MemoryType.AnimalSighting, currentTick,
+                            animalId: animal.Id, animalSpecies: animal.Species);
+                    }
+
+                    // D25b: Record carcass sightings
+                    foreach (var carcass in world.Carcasses)
+                    {
+                        if (!carcass.IsActive) continue;
+                        if (carcass.X != tx || carcass.Y != ty) continue;
+                        UpdateOrAddAnimalMemory(tx, ty, MemoryType.CarcassSighting, currentTick,
+                            animalId: carcass.Id, animalSpecies: carcass.Species,
+                            quantity: carcass.MeatYield);
+                    }
                 }
 
                 // GDD v1.8 Section 5: Detect notable geographic features for permanent lore
@@ -1191,7 +1742,7 @@ public class Agent
 
                         // Infer from PatchId format: "{ResourceType}_{seq}" e.g. "Berries_3"
                         if (tile.PatchId.StartsWith("Berries")) { patchResource = ResourceType.Berries; featureType = "berry_patch"; }
-                        else if (tile.PatchId.StartsWith("Animals")) { patchResource = ResourceType.Animals; featureType = "animal_herd"; }
+                        else if (tile.PatchId.StartsWith("Animals")) { patchResource = ResourceType.Meat; featureType = "animal_herd"; }
                         else if (tile.PatchId.StartsWith("Fish")) { patchResource = ResourceType.Fish; featureType = "fish_school"; }
                         else if (tile.PatchId.StartsWith("Grain")) { patchResource = ResourceType.Grain; featureType = "grain_field"; }
 
@@ -1213,6 +1764,9 @@ public class Agent
             Memory.Sort((a, b) => b.TickObserved.CompareTo(a.TickObserved));
             Memory.RemoveRange(SimConfig.MemoryMaxEntries, Memory.Count - SimConfig.MemoryMaxEntries);
         }
+
+        // D25b: Decay animal memory separately
+        DecayAnimalMemory(currentTick);
     }
 
     /// <summary>GDD v1.8 Section 5: Removes a specific resource memory when agent arrives and
@@ -1232,7 +1786,7 @@ public class Agent
             m.Type == MemoryType.Resource
             && m.Resource.HasValue
             && (m.Resource.Value == ResourceType.Berries || m.Resource.Value == ResourceType.Grain
-                || m.Resource.Value == ResourceType.Animals || m.Resource.Value == ResourceType.Fish));
+                || m.Resource.Value == ResourceType.Meat || m.Resource.Value == ResourceType.Fish));
     }
 
     /// <summary>GDD v1.8 Section 5: Marks a geographic position as already known (in pending list
@@ -1252,7 +1806,7 @@ public class Agent
     /// <summary>Returns remembered food resource entries (not expired).</summary>
     public List<MemoryEntry> GetRememberedFood(int currentTick)
     {
-        ResourceType[] foodTypes = { ResourceType.Berries, ResourceType.Grain, ResourceType.Animals, ResourceType.Fish };
+        ResourceType[] foodTypes = { ResourceType.Berries, ResourceType.Grain, ResourceType.Meat, ResourceType.Fish };
         return Memory.Where(m =>
             m.Type == MemoryType.Resource
             && m.Resource.HasValue
@@ -1280,9 +1834,34 @@ public class Agent
         ).ToList();
     }
 
+    /// <summary>D25b/D25c: Returns remembered huntable animal sightings (not expired).
+    /// D25c: Includes Boar (if agent has spear) and Wolf (if agent has bow).</summary>
+    public List<MemoryEntry> GetRememberedHuntableAnimals(int currentTick)
+    {
+        bool hasSpear = Knowledge.Contains("spear");
+        bool hasBow = Knowledge.Contains("bow");
+        return AnimalMemory.Where(m =>
+            m.Type == MemoryType.AnimalSighting
+            && m.AnimalSpecies.HasValue
+            && currentTick - m.TickObserved <= SimConfig.MemoryDecayTicks
+            && (m.AnimalSpecies.Value != AnimalSpecies.Boar || hasSpear)
+            && (m.AnimalSpecies.Value != AnimalSpecies.Wolf || hasBow)
+        ).ToList();
+    }
+
+    /// <summary>D25b: Returns remembered carcass sightings (not expired).</summary>
+    public List<MemoryEntry> GetRememberedCarcasses(int currentTick)
+    {
+        return AnimalMemory.Where(m =>
+            m.Type == MemoryType.CarcassSighting
+            && currentTick - m.TickObserved <= SimConfig.MemoryDecayTicks
+        ).ToList();
+    }
+
     private void UpdateOrAddMemory(int x, int y, MemoryType type, int tick,
         ResourceType? resource = null, int quantity = 0,
-        int? agentId = null, string? structureId = null)
+        int? agentId = null, string? structureId = null,
+        int? animalId = null, AnimalSpecies? animalSpecies = null)
     {
         // Try to update existing entry at same position with same type/subtype
         var existing = Memory.FirstOrDefault(m =>
@@ -1308,6 +1887,43 @@ public class Agent
                 StructureId = structureId,
                 TickObserved = tick
             });
+        }
+    }
+
+    /// <summary>D25b: Update or add to AnimalMemory (separate from main Memory to prevent RNG cascade).</summary>
+    private void UpdateOrAddAnimalMemory(int x, int y, MemoryType type, int tick,
+        int? animalId = null, AnimalSpecies? animalSpecies = null, int quantity = 0)
+    {
+        var existing = AnimalMemory.FirstOrDefault(m =>
+            m.X == x && m.Y == y && m.Type == type && m.AnimalId == animalId);
+
+        if (existing != null)
+        {
+            existing.TickObserved = tick;
+            existing.Quantity = quantity;
+        }
+        else
+        {
+            AnimalMemory.Add(new MemoryEntry
+            {
+                X = x, Y = y,
+                Type = type,
+                AnimalId = animalId,
+                AnimalSpecies = animalSpecies,
+                Quantity = quantity,
+                TickObserved = tick
+            });
+        }
+    }
+
+    /// <summary>D25b: Decay animal memory separately from main memory.</summary>
+    public void DecayAnimalMemory(int currentTick)
+    {
+        AnimalMemory.RemoveAll(m => currentTick - m.TickObserved > SimConfig.MemoryDecayTicks);
+        if (AnimalMemory.Count > 20)
+        {
+            AnimalMemory.Sort((a, b) => b.TickObserved.CompareTo(a.TickObserved));
+            AnimalMemory.RemoveRange(20, AnimalMemory.Count - 20);
         }
     }
 
@@ -1410,7 +2026,7 @@ public class Agent
     private void DecayOneInventoryFood()
     {
         // Decay non-preserved food first (berries rot faster than preserved food)
-        ResourceType[] decayOrder = { ResourceType.Berries, ResourceType.Fish, ResourceType.Animals, ResourceType.Grain, ResourceType.PreservedFood };
+        ResourceType[] decayOrder = { ResourceType.Berries, ResourceType.Fish, ResourceType.Meat, ResourceType.Grain, ResourceType.PreservedFood };
         foreach (var food in decayOrder)
         {
             if (Inventory.TryGetValue(food, out int amt) && amt > 0)
@@ -1455,7 +2071,7 @@ public class Agent
     /// <summary>Consumes the specified amount of food from inventory (any food type, including preserved).</summary>
     private void ConsumeFood(int amount)
     {
-        ResourceType[] foodTypes = { ResourceType.Berries, ResourceType.Grain, ResourceType.Animals, ResourceType.Fish, ResourceType.PreservedFood };
+        ResourceType[] foodTypes = { ResourceType.Berries, ResourceType.Grain, ResourceType.Meat, ResourceType.Fish, ResourceType.PreservedFood };
 
         int remaining = amount;
         foreach (var food in foodTypes)

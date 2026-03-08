@@ -24,5 +24,17 @@ public enum GoalType
     SeekFood,
 
     /// <summary>Move in a chosen direction for several tiles before re-evaluating.</summary>
-    Explore
+    Explore,
+
+    /// <summary>D25b: Move to animal's last known position, then pursue and kill.</summary>
+    HuntAnimal,
+
+    /// <summary>D25b: Move to carcass position, then harvest meat.</summary>
+    HarvestCarcass,
+
+    /// <summary>D25c: Move to target tile, then place trap.</summary>
+    SetTrapAt,
+
+    /// <summary>D25d: Move to animal's position, offer food to tame it.</summary>
+    TameAnimal
 }

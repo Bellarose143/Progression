@@ -1,3 +1,4 @@
+using System.Linq;
 using CivSim.Core;
 using Xunit;
 
@@ -63,10 +64,21 @@ public class ReproductionTests
             .ResourceAt(-1, 0, ResourceType.Berries, 40)
             .Build();
 
-        sim.Tick(1500);
+        // Tick-by-tick: while both agents remain exposed, no reproduction should occur.
+        // Agents may eventually discover lean_to and build shelter (which enables reproduction),
+        // so we only check the constraint while they're actually unsheltered.
+        for (int t = 0; t < 1500; t++)
+        {
+            bool anyExposed = sim.Simulation.Agents.Any(a => a.IsExposed);
+            if (!anyExposed) break; // Shelter built — constraint no longer applies
 
-        Assert.True(sim.Simulation.Agents.Count == 2,
-            "Exposed agents (no shelter) should not reproduce (RULE-R2)");
+            sim.Tick(1);
+            if (anyExposed)
+            {
+                Assert.True(sim.Simulation.Agents.Count == 2,
+                    $"Exposed agents (no shelter) should not reproduce (RULE-R2) at tick {t}");
+            }
+        }
     }
 
     [Fact]

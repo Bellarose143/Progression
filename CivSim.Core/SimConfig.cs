@@ -10,17 +10,61 @@ namespace CivSim.Core;
 ///   Tick = internal simulation heartbeat (INVISIBLE to observer). 1 tick ≈ 2 sim-minutes.
 ///   Sim-day = the basic observable calendar unit = 480 ticks.
 ///   1 season = 28 sim-days (4 weeks), 1 year = 4 seasons = 112 sim-days = 53760 ticks.
-///   World = 256×256 grid, each tile ≈ 15 meters across (~3.8 km total).
+///   World = 350×350 grid, each tile ≈ 15 ft (~5 m) across.
 ///   Movement is float-based progress per tick. Renderer interpolates at 60fps.
 ///
 /// [RECALIBRATE] marks values that need tuning in a dedicated calibration pass.
+///
+/// World Scale Migration (Phase A):
+///   Old baseline was 64×64 (~300 ft/tile). New baseline is 350×350 (~15 ft/tile).
+///   All distance/range constants have been recalibrated for the new scale.
+///   Old 64×64 values are noted in comments for reference.
 /// </summary>
 public static class SimConfig
 {
     // ── World ──────────────────────────────────────────────────────────
-    /// <summary>v1.8 Corrections: 256×256 grid. Each tile ≈ 15m. Map ≈ 3.8 km across.</summary>
-    public static readonly int DefaultGridWidth  = 256;
-    public static readonly int DefaultGridHeight = 256;
+    /// <summary>Default world size. 350×350 tiles (~15 ft/tile). Parameterized so tests can use smaller grids.
+    /// Old 64×64 baseline: DefaultGridWidth=64, DefaultGridHeight=64.</summary>
+    public static int DefaultGridWidth  = 350;
+    public static int DefaultGridHeight = 350;
+
+    // ── Distance Constants (recalibrated for 350×350, ~15 ft/tile) ──
+    // Old 64×64 values noted in comments for reference.
+
+    /// <summary>Home mode local gather radius (tiles). Old 64×64: 5.</summary>
+    public static int HomeGatherRadius      = 8;
+    /// <summary>Caretaker short-range gather tether (tiles). Old 64×64: 8.</summary>
+    public static int CaretakerTetherRadius  = 10;
+    /// <summary>Phase 1 distance safety check threshold (tiles). Old 64×64: 15.</summary>
+    public static int SafetyReturnDist       = 40;
+    /// <summary>Absolute non-Explore/non-Forage move ceiling (tiles). Old 64×64: 20.</summary>
+    public static int HardMoveCeiling        = 50;
+    /// <summary>Max forage trip distance from home (tiles). Old 64×64: 30.</summary>
+    public static int ForageMaxRange         = 100;
+    /// <summary>Max explore trip distance from home (tiles). Old 64×64: 45.</summary>
+    public static int ExploreMaxRange        = 120;
+    /// <summary>Home mode hard tether — return home if farther than this (tiles). Old 64×64: 10.</summary>
+    public static int HomeTetherRadius       = 25;
+    /// <summary>Caretaker distance escape threshold (tiles). Old 64×64: 12.</summary>
+    public static int CaretakerEscapeDist    = 30;
+    /// <summary>Caretaker ModeTransitionManager escape threshold (tiles). Old 64×64: 15.</summary>
+    public static int CaretakerMTMEscapeDist = 40;
+    /// <summary>D14 Fix 2: Home/Caretaker goal-continuation move leash for adults (tiles). Old 64×64: 15.</summary>
+    public static int HomeModeMoveLeash      = 40;
+    /// <summary>D14 Fix 2: Home/Caretaker goal-continuation move leash for children (tiles). Old 64×64: 10.</summary>
+    public static int HomeModeMoveLeashChild = 25;
+
+    // ── New 350×350 Distance Constants ────────────────────────────────
+    /// <summary>Max range from settlement center for placing structures (tiles).</summary>
+    public static readonly int StructureBuildRange = 20;
+    /// <summary>Caretaker mode general range from home (tiles).</summary>
+    public static readonly int CaretakerRange = 10;
+    /// <summary>Home mode local gather range (tiles). Alias for HomeGatherRadius for clarity.</summary>
+    public static readonly int HomeLocalGatherRange = 8;
+    /// <summary>Radius to check food surplus around settlement (tiles).</summary>
+    public static readonly int FoodSurplusCheckRadius = 15;
+    /// <summary>Radius to check for nearby shelter (tiles).</summary>
+    public static readonly int ShelterNearbyRadius = 15;
 
     // ══════════════════════════════════════════════════════════════════
     // TIME MODEL (GDD v1.8 Corrections — 480 ticks/day, 1 tick ≈ 2 min)
@@ -97,8 +141,8 @@ public static class SimConfig
     /// This value is the health regen multiplier when exposed (0 = no regen).</summary>
     public static readonly float ExposureRegenSuppression = 0f;
 
-    /// <summary>Chebyshev radius from a shelter that counts as "sheltered".</summary>
-    public static readonly int ExposureShelterRadius = 3;
+    /// <summary>Chebyshev radius from a shelter that counts as "sheltered". Old 64×64: 3.</summary>
+    public static readonly int ExposureShelterRadius = 5;
 
     /// <summary>Multiplier for exposure effect when agent knows clothing/weaving (50% reduction).</summary>
     public static readonly float ExposureClothingReduction = 0.5f;
@@ -152,19 +196,19 @@ public static class SimConfig
     /// <summary>Stability score reduction per existing youth dependent.</summary>
     public static readonly float DependentReductionYouth = 0.2f;
 
-    /// <summary>GDD v1.8 Section 3: Both agents must have shelter within this radius to reproduce.</summary>
-    public static readonly int ReproductionShelterProximity = 5;
+    /// <summary>GDD v1.8 Section 3: Both agents must have shelter within this radius to reproduce. Old 64×64: 5.</summary>
+    public static readonly int ReproductionShelterProximity = 15;
 
     // ── Initial Agent Age ──────────────────────────────────────────────
     /// <summary>Starting age for founding agents. 16 years × 53760 = 860160 ticks.</summary>
     public static readonly int InitialAgentAge = 860160;
 
     // ── Age & Mortality (GDD v1.8) ────────────────────────────────────
-    /// <summary>Infant stage: 0 to 5 years. 5 × 53760 = 268800 ticks.</summary>
-    public static readonly int ChildInfantAge = 268800;
+    /// <summary>Infant stage: 0 to 0.5 years. [RECALIBRATE] Reduced from 5 years (268800) for diagnostic runs.</summary>
+    public static readonly int ChildInfantAge = TicksPerYear / 2; // 26880 ticks = 0.5 sim-years
 
-    /// <summary>Youth stage: 5 to 12 years. 12 × 53760 = 645120 ticks.</summary>
-    public static readonly int ChildYouthAge = 645120;
+    /// <summary>Youth stage: 0.5 to 1 year. [RECALIBRATE] Reduced from 12 years (645120) for diagnostic runs.</summary>
+    public static readonly int ChildYouthAge = TicksPerYear; // 53760 ticks = 1 sim-year
 
     /// <summary>Old-age death chance begins. 55 × 53760 = 2956800 ticks.</summary>
     public static readonly int OldAgeThreshold = 2956800;
@@ -210,13 +254,23 @@ public static class SimConfig
     public static readonly int StagnationWarningTicks = 268800;
 
     // ── Spatial ────────────────────────────────────────────────────────
-    /// <summary>v1.8 Corrections: Radius (in tiles) an agent scans when evaluating tile viability.
-    /// Scaled up for 256×256 grid — agents can see ~20 tiles for fallback food search.</summary>
-    public static readonly int ViabilityScanRadius = 20;
+    /// <summary>Radius (in tiles) an agent scans when evaluating tile viability. Old 64×64: 20.</summary>
+    public static readonly int ViabilityScanRadius = 30;
 
     // ── Perception & Memory ─────────────────────────────────────────
-    /// <summary>Chebyshev radius for full active perception scans.</summary>
-    public static readonly int PerceptionRadius = 8;
+    /// <summary>Chebyshev radius for full active perception scans. Old 64×64: 8.
+    /// Default fallback; biome-specific radii below are used when biome-dependent perception is enabled.</summary>
+    public static readonly int PerceptionRadius = 20;
+
+    // ── Biome-Specific Perception Radii (for future biome-dependent perception) ──
+    /// <summary>Perception radius on Plains tiles.</summary>
+    public static readonly int PerceptionRadiusPlains = 30;
+    /// <summary>Perception radius on Forest tiles.</summary>
+    public static readonly int PerceptionRadiusForest = 12;
+    /// <summary>Perception radius on Mountain tiles.</summary>
+    public static readonly int PerceptionRadiusMountain = 20;
+    /// <summary>Perception radius on Desert tiles.</summary>
+    public static readonly int PerceptionRadiusDesert = 35;
 
     /// <summary>v1.8 Corrections: Chebyshev radius for immediate perception (every tick).
     /// 1-2 tiles per corrections doc. Used for interrupt checks.</summary>
@@ -238,8 +292,8 @@ public static class SimConfig
     public static readonly int MemoryMaxEntries = 30;
 
     // ── Spawn Clustering ────────────────────────────────────────────
-    /// <summary>Radius around spawn center within which new agents are placed.</summary>
-    public static readonly int SpawnClusterRadius = 5;
+    /// <summary>Radius around spawn center within which new agents are placed. Old 64×64: 5.</summary>
+    public static readonly int SpawnClusterRadius = 12;
 
     // ── Movement ────────────────────────────────────────────────────
     /// <summary>Extra hunger drain from terrain: round((cost - 1.0) * scale).</summary>
@@ -305,12 +359,12 @@ public static class SimConfig
 
     /// <summary>v1.8 Corrections: Ticks to build a basic lean-to shelter. ~3-4 hours = 105 ticks.</summary>
     public static readonly int ShelterBuildTicks = 105;
-    /// <summary>Wood consumed on shelter completion.</summary>
+    /// <summary>Wood consumed on lean-to shelter completion.</summary>
     public static readonly int ShelterWoodCost = 3;
-    /// <summary>Stone consumed on shelter completion.</summary>
-    public static readonly int ShelterStoneCost = 1;
-    /// <summary>Skip building if any shelter exists within this Chebyshev radius.</summary>
-    public static readonly int ShelterProximityRadius = 5;
+    /// <summary>Stone consumed on lean-to shelter completion. Directive #11 Fix 2: 0 — a lean-to is sticks/leaves, no stone.</summary>
+    public static readonly int ShelterStoneCost = 0;
+    /// <summary>Skip building if any shelter exists within this Chebyshev radius. Old 64×64: 5.</summary>
+    public static readonly int ShelterProximityRadius = 15;
 
     // ── Action Durations (v1.8 Corrections) ──────────────────────────
     // 1 tick = 2 sim-minutes. All values from the corrections doc action table.
@@ -374,6 +428,28 @@ public static class SimConfig
     public static readonly float DepositHomeBaseUtility = 0.4f;
     /// <summary>Section 7: Must have more than this food to consider depositing at home. [RECALIBRATE]</summary>
     public static readonly int DepositHomeFoodThreshold = 3;
+    /// <summary>Fix 2A: Minimum total depositable inventory (food + materials) before DepositHome scores > 0.</summary>
+    public const int DEPOSIT_HOME_MIN_THRESHOLD = 3;
+    /// <summary>Fix 2B: Ticks after a successful DepositHome before it can score > 0 again.</summary>
+    public const int DEPOSIT_HOME_COOLDOWN = 5;
+
+    // ── D21 Fix 3: Opportunistic Pickup ────────────────────────────
+    /// <summary>D21: Chance per eligible move to pick up 1 unit of Stone/Ore/Wood. [CALIBRATE LATER]</summary>
+    public const float OPPORTUNISTIC_PICKUP_CHANCE = 0.25f;
+
+    // ── D22: Non-food Inventory Thresholds (extracted from hardcoded values) ──
+    /// <summary>D22: Non-food soft cap for opportunistic pickup eligibility.</summary>
+    public const int NonFoodPickupCap = 5;
+    /// <summary>D22: Non-food count below which gather scoring gives full score.</summary>
+    public const int NonFoodGatherFullScoreCap = 5;
+    /// <summary>D22: Non-food count at which gather scoring applies reduced multiplier.</summary>
+    public const int NonFoodGatherReducedCap = 8;
+    /// <summary>D22: Non-food hard cap — block all non-food adds at this count.</summary>
+    public const int NonFoodInventoryHardCap = 7;
+    /// <summary>D22: Scoring multiplier in the 5-8 non-food band.</summary>
+    public const float NonFoodGatherReducedMultiplier = 0.5f;
+    /// <summary>D22: Hunger threshold below which non-food pickup is blocked.</summary>
+    public const float NonFoodPickupHungerGate = 50f;
 
     // ── Pressure Map Cadence ──────────────────────────────────────
     /// <summary>v1.8 Corrections: Rebuild pressure map every N ticks. ~1 sim-day = 480 ticks.</summary>
@@ -382,9 +458,16 @@ public static class SimConfig
     /// <summary>If agent moves/tick exceeds this, force pressure map rebuild.</summary>
     public static readonly int PressureMapMigrationTrigger = 5;
 
+    // ── Farm Placement ──────────────────────────────────────────────
+    /// <summary>Maximum farm tiles per settlement before a granary is built.</summary>
+    public static readonly int MaxFarmTilesPreGranary = 12;
+
+    /// <summary>Preferred maximum Chebyshev distance from home for farm placement. Old 64×64: 3.</summary>
+    public static readonly int FarmPreferredHomeDistance = 10;
+
     // ── Ecology ──────────────────────────────────────────────────────
-    /// <summary>Radius around agents that creates gathering pressure on tiles.</summary>
-    public static readonly int GatheringPressureRadius = 5;
+    /// <summary>Radius around agents that creates gathering pressure on tiles. Old 64×64: 5.</summary>
+    public static readonly int GatheringPressureRadius = 12;
     /// <summary>Agent count threshold for 0.75x regen rate.</summary>
     public static readonly int GatheringPressureThreshold1 = 3;
     /// <summary>Agent count threshold for 0.5x regen rate.</summary>
@@ -401,9 +484,94 @@ public static class SimConfig
     /// <summary>v1.8 Corrections: Ticks before untended farm reverts to wild regen. ~30 sim-days = 14400 ticks.</summary>
     public static readonly int FarmTendedGracePeriod = 14400;
 
+    // ── Animal Entities (D25a) ──────────────────────────────────────
+    /// <summary>D25a: Ticks between animal replenishment checks.</summary>
+    public static readonly int AnimalReplenishInterval = 5000;
+    /// <summary>D25a: Ticks before extinct herd respawns.</summary>
+    public static readonly int HerdRespawnDelay = 10000;
+    /// <summary>D25a: Ticks before carcass rots completely.</summary>
+    public static readonly int CarcassDecayTicks = 20;
+    /// <summary>D25a: Ticks before carcass loses 50% meat.</summary>
+    public static readonly int CarcassHalfDecayTicks = 10;
+
+    // ── Hunting & Harvest (D25b) ──────────────────────────────────────
+    /// <summary>D25b: Duration of Harvest action in ticks.</summary>
+    public static readonly int HarvestDuration = 3;
+    /// <summary>D25b: Raw meat hunger restoration (40/100).</summary>
+    public static readonly float MeatHungerValue = 40f;
+    /// <summary>D25b: Cooked meat hunger restoration (60/100).</summary>
+    public static readonly float CookedMeatHungerValue = 60f;
+    /// <summary>D25b: Hunt score multiplier (keeps hunting below easy gathering).</summary>
+    public static readonly float HuntScoreMultiplier = 1.0f;
+    /// <summary>D25b: Max distance from home before hunt is abandoned. Old 64×64: 15.</summary>
+    public static readonly int HuntMaxDistanceFromHome = 40;
+
+    // ── Combat (D25c) ──────────────────────────────────────────────
+    /// <summary>Old 64×64: 2.</summary>
+    public static readonly int BoarChargeRange = 5;
+    /// <summary>Old 64×64: 3.</summary>
+    public static readonly int WolfAggroRange = 8;
+    /// <summary>Old 64×64: 2.</summary>
+    public static readonly int WolfAttackRange = 4;
+    /// <summary>Old 64×64: 3.</summary>
+    public static readonly int StructureDeterrentRange = 10;
+    /// <summary>Old 64×64: 4.</summary>
+    public static readonly int BoarMaxPursuitFromTerritory = 10;
+    /// <summary>Old 64×64: 6.</summary>
+    public static readonly int WolfMaxPursuitFromTerritory = 15;
+    public static readonly int BoarDisengageCooldown = 10;
+    public static readonly int WolfDisengageCooldown = 15;
+    /// <summary>Old 64×64: 5.</summary>
+    public static readonly int WolfPackConvergeRange = 15;
+    public static readonly float DisengageHealthThreshold = 30f;
+    public static readonly float BoarFleeSuccessChance = 0.70f;
+    public static readonly float WolfSingleFleeSuccessChance = 0.40f;
+    public static readonly float WolfPackFleeSuccessChance = 0.25f;
+    /// <summary>Old 64×64: 2.</summary>
+    public static readonly int DisengageFleeDistance = 5;
+    // Melee damage per tick by tool tier
+    public static readonly int DamageBareHands = 2;
+    public static readonly int DamageStoneKnife = 5;
+    public static readonly int DamageCrudeAxe = 7;
+    public static readonly int DamageHaftedTools = 8;
+    public static readonly int DamageSpearMelee = 10;
+    public static readonly int DamageBowMelee = 5;
+    // Ranged damage
+    public static readonly int SpearRangedDamage = 15;
+    /// <summary>Old 64×64: 2.</summary>
+    public static readonly int SpearRangedRange = 4;
+    public static readonly int BowRangedDamage = 10;
+    /// <summary>Old 64×64: 3.</summary>
+    public static readonly int BowRangedRange = 6;
+    public static readonly int BowRangedTicks = 2;
+    // Animal damage per tick
+    public static readonly int BoarDamagePerTick = 12;
+    public static readonly int WolfSingleDamagePerTick = 12;
+    public static readonly int WolfPackExtraDamagePerTick = 8;
+    // Hunt scoring for dangerous prey
+    public static readonly float BoarHuntDangerPenalty = 0.4f;
+    public static readonly float WolfHuntDangerPenalty = 0.3f;
+    public static readonly float BoarHuntMinHealth = 70f;
+    public static readonly float WolfHuntMinHealth = 80f;
+    public static readonly float WolfPackSizeScorePenalty = 0.1f;
+    /// <summary>Night wolf bonus detection range. Old 64×64: 1.</summary>
+    public static readonly int WolfNightDetectionBonus = 3;
+
+    // ── D25c: Trapping ──────────────────────────────────────────────────
+    public static readonly int TrapPlacementTicks = 2;
+    public static readonly float TrapCatchChance = 0.03f; // 3% per tick if rabbit nearby
+    public static readonly int TrapDecayTicks = 200;
+    public static readonly int MaxTrapsPerAgent = 3;
+    public static readonly float TrapBaseScore = 0.15f;
+    /// <summary>Old 64×64: 8.</summary>
+    public static readonly int TrapPlacementRadius = 25; // tiles from home
+    /// <summary>Radius around trap that can catch animals (tiles).</summary>
+    public static readonly int TrapCatchRadius = 3;
+
     // ── Diagnostic Performance ──────────────────────────────────────
-    /// <summary>v1.8 Corrections: Diagnostic snapshot every N ticks. 1 sim-day = 480 ticks.</summary>
-    public static readonly int DiagnosticSampleInterval = 480;
+    /// <summary>v1.8 Corrections: Diagnostic snapshot every N ticks. Must NOT be a multiple of
+    /// TicksPerSimDay (480) to avoid stroboscopic aliasing where every sample hits the same time of day.</summary>
+    public static readonly int DiagnosticSampleInterval = 479;
 
     /// <summary>Flush CSV to disk every N ticks. 1 year = 53760 ticks.</summary>
     public static readonly int DiagnosticFlushInterval = 53760;
@@ -413,14 +581,14 @@ public static class SimConfig
     public static readonly float HomePullStrength = 4.0f;
 
     // ── Day/Night Cycle (Systemic 4) ──────────────────────────────────
-    /// <summary>Tick within a sim-day when "night" begins (75% through the day = 360).</summary>
-    public static readonly int NightStartHour = 360;
+    /// <summary>Tick within a sim-day when "night" begins (~9PM = tick 420 of 480).</summary>
+    public static readonly int NightStartHour = 420;
 
-    /// <summary>Tick within a sim-day when "morning" begins (25% through the day = 120).</summary>
-    public static readonly int NightEndHour = 120;
+    /// <summary>Tick within a sim-day when "morning" begins (~5AM = tick 100 of 480).</summary>
+    public static readonly int NightEndHour = 100;
 
-    /// <summary>Duration of a night rest cycle in ticks (~6 sim-hours = 180 ticks).</summary>
-    public static readonly int NightRestDuration = 180;
+    /// <summary>Duration of a night rest cycle in ticks (~8 sim-hours = 160 ticks).</summary>
+    public static readonly int NightRestDuration = 160;
 
     // ── Personality Traits ───────────────────────────────────────────
     /// <summary>Probability that a child's trait mutates to a random trait instead of inheriting.</summary>
@@ -439,8 +607,8 @@ public static class SimConfig
     /// <summary>Starting InteractionCount for parent-child family bonds.</summary>
     public static readonly int SocialBondFamilyStart = 10;
 
-    /// <summary>Chebyshev radius within which social bonds do NOT decay.</summary>
-    public static readonly int SocialBondProximityRadius = 3;
+    /// <summary>Chebyshev radius within which social bonds do NOT decay. Old 64×64: 3.</summary>
+    public static readonly int SocialBondProximityRadius = 8;
 
     // ── Action Dampening ─────────────────────────────────────────────
     /// <summary>Multiplier per consecutive tick of same utility action. Prevents oscillation.</summary>
@@ -461,12 +629,33 @@ public static class SimConfig
     /// Knowledge propagation starts as soon as the first shelter is built.</summary>
     public static readonly int SettlementShelterThreshold = 1;
 
-    /// <summary>Chebyshev radius for settlement cluster detection.</summary>
-    public static readonly int SettlementRadius = 5;
+    /// <summary>Chebyshev radius for settlement cluster detection. Old 64×64: 5.</summary>
+    public static readonly int SettlementRadius = 15;
 
     // ── ShareFood Utility ───────────────────────────────────────────
     /// <summary>Base utility score for ShareFood action (feeding starving adjacent agent).</summary>
     public static readonly float ShareFoodBaseUtility = 0.7f;
+
+    // ── D19: Restlessness System ────────────────────────────────────
+    /// <summary>Restlessness gain per comfort-idle tick (adult rate). CALIBRATE LATER.</summary>
+    public static readonly float RestlessnessGainRate = 0.5f;
+    /// <summary>Youth (age 5-12) accumulate at half adult rate.</summary>
+    public static readonly float RestlessnessYouthGainRate = 0.25f;
+    /// <summary>Initial restlessness for founders (starting agents).</summary>
+    public static readonly float RestlessnessFounderStart = 30f;
+    // D19 drain rates per productive action tick:
+    public static readonly float RestlessnessExperimentDrain = 1.5f;
+    public static readonly float RestlessnessBuildDrain = 1.0f;
+    public static readonly float RestlessnessTendFarmDrain = 0.8f;
+    public static readonly float RestlessnessGatherDrain = 0.5f;
+    public static readonly float RestlessnessCookDrain = 0.5f;
+    public static readonly float RestlessnessPreserveDrain = 0.5f;
+    public static readonly float RestlessnessExploreDrain = 0.3f;
+    // D19 scoring maxBoost values:
+    public static readonly float RestlessnessExperimentBoost = 0.8f;
+    public static readonly float RestlessnessBuildBoost = 0.4f;
+    public static readonly float RestlessnessTendFarmBoost = 0.4f;
+    public static readonly float RestlessnessGatherBoost = 0.2f;
 
     // ══════════════════════════════════════════════════════════════════
     // BEHAVIORAL MODE THRESHOLDS (v1.8 Behavioral Modes)
@@ -498,6 +687,10 @@ public static class SimConfig
     public static readonly int ForageReturnFoodCaretaker = 4;
     /// <summary>Maximum ticks in Forage before forced return (~7 sim-hours).</summary>
     public static readonly int ForageMaxDuration = 200;
+    /// <summary>Distance from home at which forager commits to continuing rather than returning (tiles).</summary>
+    public static readonly int ForageCommitmentDistance = 70;
+    /// <summary>Distance from home at which forager gives up and returns (tiles).</summary>
+    public static readonly int ForageGiveUpDistance = 100;
 
     // ── Explore Mode ──
     /// <summary>Minimum ticks in Home mode before Explore is allowed (settle first).</summary>
@@ -507,7 +700,7 @@ public static class SimConfig
     /// <summary>Health must be above this to enter Explore.</summary>
     public static readonly int ExploreEntryHealth = 80;
     /// <summary>Must carry this much food to enter Explore.</summary>
-    public static readonly int ExploreEntryFood = 6;
+    public static readonly int ExploreEntryFood = 4; // [RECALIBRATE] Reduced from 6 — Directive #8 Fix 5
     /// <summary>Explorer trait lowers hunger entry threshold.</summary>
     public static readonly float ExploreEntryHungerExplorer = 70f;
     /// <summary>Explorer trait lowers health entry threshold.</summary>
@@ -523,17 +716,56 @@ public static class SimConfig
     /// <summary>Health threshold to exit Explore early.</summary>
     public static readonly int ExploreExitHealth = 50;
 
+    // ── D24: Explore Direction Diversity ──
+    /// <summary>D24 Fix 1A: Number of top directions for weighted random selection.</summary>
+    public static readonly int ExploreTopNDirections = 3;
+    /// <summary>D24 Fix 1B: Score multiplier for recently explored directions.</summary>
+    public static readonly float ExploreRecentDirectionPenalty = 0.35f;
+    /// <summary>D24 Fix 1B: Max recent directions to remember.
+    /// Bug 3 fix: Increased from 3 to 7 so cooldown covers nearly all 8 directions.
+    /// With depth=3, a direction fell off the recent list after 3 trips, allowing the
+    /// same corner to win the memory-based scoring repeatedly.</summary>
+    public static readonly int ExploreRecentDirectionDepth = 7;
+    /// <summary>D24 Fix 1B: Ticks without exploring before direction memory decays.</summary>
+    public static readonly int ExploreDirectionDecayTicks = 2000;
+    /// <summary>D24 Fix 1C: Fraction of budget spent near start that triggers early return.</summary>
+    public static readonly float ExploreBudgetWasteThreshold = 0.5f;
+    /// <summary>D24 Fix 1C: Max distance from explore start position to be considered "near start". Old 64×64: 3.</summary>
+    public static readonly int ExploreBudgetWasteRadius = 8;
+
+    // ── New Exploration Constants (350×350) ──
+    /// <summary>Distance from home to check for return path viability during explore (tiles).</summary>
+    public static readonly int ExploreReturnPathCheck = 15;
+    /// <summary>Tiles of non-movement before explorer is considered stuck.</summary>
+    public static readonly int ExploreStuckDetectionTiles = 8;
+    /// <summary>Maximum distance an explorer may travel from home (tiles).</summary>
+    public static readonly int MaxExploreDistance = 120;
+    /// <summary>Radius around a blacklisted position to avoid (tiles).</summary>
+    public static readonly int BlacklistRadius = 8;
+
+    // ── D24: New Adult Bootstrap ──
+    /// <summary>D24 Fix 3: Duration of productivity boost after maturation (ticks). ~1 sim-day.</summary>
+    public static readonly int NewAdultBootstrapDuration = 500;
+    /// <summary>D24 Fix 3: Gather score multiplier during bootstrap.</summary>
+    public static readonly float NewAdultGatherBoost = 1.5f;
+    /// <summary>D24 Fix 3: Explore score multiplier during bootstrap.</summary>
+    public static readonly float NewAdultExploreBoost = 1.5f;
+    /// <summary>D24 Fix 3: Experiment score multiplier during bootstrap.</summary>
+    public static readonly float NewAdultExperimentBoost = 1.3f;
+    /// <summary>D24 Fix 3: Build score multiplier during bootstrap.</summary>
+    public static readonly float NewAdultBuildBoost = 1.2f;
+
     // ── Caretaker Mode ──
-    /// <summary>Max forage distance from home in Caretaker mode (tiles, Chebyshev).</summary>
-    public static readonly int CaretakerForageRange = 8;
+    /// <summary>Max forage distance from home in Caretaker mode (tiles, Chebyshev). Old 64×64: 8.</summary>
+    public static readonly int CaretakerForageRange = 20;
     /// <summary>Child hunger check interval in ticks.</summary>
     public static readonly int CaretakerChildCheckInterval = 30;
-    /// <summary>Age in ticks when youngest child exits care threshold (~4 sim-years).</summary>
-    public static readonly int CaretakerExitChildAge = 4 * TicksPerYear; // 215040
+    /// <summary>Age in ticks when youngest child exits care threshold. [RECALIBRATE] Reduced from 4 years (215040).</summary>
+    public static readonly int CaretakerExitChildAge = TicksPerYear / 2; // 26880 ticks = 0.5 sim-years
 
     // ── Build Mode ──
-    /// <summary>Build only at/adjacent to HomeTile (Chebyshev distance).</summary>
-    public static readonly int BuildMaxDistFromHome = 1;
+    /// <summary>Build only at/adjacent to HomeTile (Chebyshev distance). Old 64×64: 1.</summary>
+    public static readonly int BuildMaxDistFromHome = 3;
 
     // ── Rendering ───────────────────────────────────────────────────
     /// <summary>Maximum resource sprites per resource type per tile.</summary>
@@ -639,4 +871,104 @@ public static class SimConfig
 
     /// <summary>Ticks between milestone log entries. ~1 year = 53760 ticks.</summary>
     public static readonly int MilestoneLogInterval = 53760;
+
+    // ══════════════════════════════════════════════════════════════════
+    // D25d: DOMESTICATION, PENS, BREEDING
+    // ══════════════════════════════════════════════════════════════════
+
+    // ── Taming ──
+    /// <summary>Ticks between food offerings during taming.</summary>
+    public static readonly int TameOfferingInterval = 5;
+    /// <summary>Ticks without an offering before tame progress decays by 1.</summary>
+    public static readonly int TameDecayInterval = 30;
+    /// <summary>Tame progress decay rate when agent leaves perception range (1 per N ticks).</summary>
+    public static readonly int TameOutOfRangeDecayRate = 10;
+    /// <summary>Target domesticated animal count — taming score reaches 0 at this value.</summary>
+    public static readonly int TameTargetDomesticCount = 6;
+    /// <summary>Base tame score multiplier.</summary>
+    public static readonly float TameBaseScore = 0.20f;
+    /// <summary>Bonus tame score when food surplus > 10.</summary>
+    public static readonly float TameFoodSurplusBonus = 0.1f;
+
+    // Taming thresholds per species
+    public static readonly int TameThresholdRabbit = 3;
+    public static readonly int TameThresholdCow = 5;
+    public static readonly int TameThresholdSheep = 4;
+    public static readonly int TameThresholdDeer = 8;
+    public static readonly int TameThresholdBoar = 10;
+    public static readonly int TameThresholdWolf = 15;
+
+    // ── Pens ──
+    /// <summary>Max animals in a small-animal pen (Rabbit, Boar/Pig).</summary>
+    public static readonly int PenCapacitySmall = 5;
+    /// <summary>Max animals in a large-animal pen (Deer, Cow).</summary>
+    public static readonly int PenCapacityLarge = 3;
+    /// <summary>Max grain a pen can store.</summary>
+    public static readonly int PenMaxFoodStore = 50;
+    /// <summary>Ticks between grain consumption per penned animal.</summary>
+    public static readonly int PenFeedInterval = 200;
+    /// <summary>Health damage per tick when pen food store is empty.</summary>
+    public static readonly int PenStarvationDamage = 2;
+    /// <summary>Tame score boost when a pen has exactly 1 animal (needs breeding partner).</summary>
+    public static readonly float TameBreedingPairUrgencyScore = 0.35f;
+    /// <summary>Build duration for a pen (ticks).</summary>
+    public static readonly int PenBuildDuration = 8;
+    /// <summary>Max distance from home to build a pen. Old 64×64: 3.</summary>
+    public static readonly int PenMaxDistFromHome = 8;
+    /// <summary>Base score for FeedPen action (25-50% food level).</summary>
+    public static readonly float FeedPenBaseScore = 0.25f;
+    /// <summary>Critical score for FeedPen action (below 25% food level).</summary>
+    public static readonly float FeedPenCriticalScore = 0.40f;
+    /// <summary>Caretaker mode FeedPen score (same priority as child feeding).</summary>
+    public static readonly float FeedPenCaretakerScore = 0.35f;
+
+    // ── Breeding ──
+    /// <summary>Rabbit breed check interval (ticks).</summary>
+    public static readonly int BreedIntervalRabbit = 40;
+    /// <summary>Cow breed check interval (ticks).</summary>
+    public static readonly int BreedIntervalCow = 80;
+    /// <summary>Sheep breed check interval (ticks).</summary>
+    public static readonly int BreedIntervalSheep = 60;
+    /// <summary>Deer breed check interval (ticks).</summary>
+    public static readonly int BreedIntervalDeer = 100;
+    /// <summary>Boar/Pig breed check interval (ticks).</summary>
+    public static readonly int BreedIntervalBoar = 60;
+    /// <summary>Rabbit breed chance per eligible pair.</summary>
+    public static readonly float BreedChanceRabbit = 0.60f;
+    /// <summary>Cow breed chance per eligible pair.</summary>
+    public static readonly float BreedChanceCow = 0.40f;
+    /// <summary>Sheep breed chance per eligible pair.</summary>
+    public static readonly float BreedChanceSheep = 0.50f;
+    /// <summary>Deer breed chance per eligible pair.</summary>
+    public static readonly float BreedChanceDeer = 0.30f;
+    /// <summary>Boar/Pig breed chance per eligible pair.</summary>
+    public static readonly float BreedChanceBoar = 0.50f;
+
+    // ── Slaughter ──
+    /// <summary>Slaughter action duration (ticks).</summary>
+    public static readonly int SlaughterDuration = 2;
+    /// <summary>Base slaughter scoring multiplier.</summary>
+    public static readonly float SlaughterBaseScore = 0.20f;
+    /// <summary>Minimum same-species animals to preserve (breeding pair).</summary>
+    public static readonly int SlaughterBreedingPairMin = 2;
+
+    // ── Wolf → Dog ──
+    /// <summary>Ticks between wolf pup spawn checks per pack.</summary>
+    public static readonly int WolfPupSpawnInterval = 400;
+    /// <summary>Min ticks a wolf pack must exist before pup spawning.</summary>
+    public static readonly int WolfPackEstablishedAge = 200;
+    /// <summary>Chance of pup spawning per check.</summary>
+    public static readonly float WolfPupSpawnChance = 0.30f;
+    /// <summary>Max pups per wolf pack at any time.</summary>
+    public static readonly int WolfMaxPupsPerPack = 2;
+    /// <summary>Dog perception radius bonus for owner. Old 64×64: 3.</summary>
+    public static readonly int DogPerceptionBonus = 6;
+    /// <summary>Dog hunt success bonus.</summary>
+    public static readonly float DogHuntBonus = 0.10f;
+    /// <summary>Dog night guard alert range. Old 64×64: 5.</summary>
+    public static readonly int DogNightGuardRange = 12;
+    /// <summary>Dog restlessness decay reduction for owner (15%).</summary>
+    public static readonly float DogRestlessnessReduction = 0.15f;
+    /// <summary>Dog health points.</summary>
+    public static readonly int DogHealth = 15;
 }

@@ -21,6 +21,11 @@ public class UIRenderer
     private float cachedFoodHealth;
     private int foodCacheTick;
 
+    // PERF-04: Cached filtered event list — invalidated when event count or filter changes
+    private List<SimulationEvent>? _cachedFilteredEvents;
+    private int _cachedEventCount;
+    private EventFilterLevel _cachedFilterLevel;
+
     public void RenderStatsPanel(int screenWidth, int screenHeight, SimulationStats stats,
                                   float ticksPerSecond, int peakPopulation, World world,
                                   EventFilterLevel filterLevel)
@@ -71,12 +76,11 @@ public class UIRenderer
         Rl.DrawText($"Oldest: {Agent.FormatTicks(stats.OldestAgent)}", x, y, 14, Cyan);
         y += spacing;
 
-        // Food health (cached — recalculate every 10 ticks)
+        // Food health — PERF-03: use running counter instead of scanning all tiles
         if (stats.CurrentTick - foodCacheTick >= 10 || foodCacheTick == 0)
         {
-            int totalFood = CalculateTotalEdibleFood(world);
             cachedFoodHealth = stats.AliveAgents > 0
-                ? totalFood / (stats.AliveAgents * SimConfig.HungerDrainPerTick)
+                ? world.TotalWorldFood / (stats.AliveAgents * SimConfig.HungerDrainPerTick)
                 : 0;
             foodCacheTick = stats.CurrentTick;
         }
@@ -181,8 +185,8 @@ public class UIRenderer
             Color agentColor = ProceduralSprites.GetAgentColor(agent.Id);
             Rl.DrawCircle(panelX + 5, y + 6, 4, agentColor);
 
-            string actionStr = agent.CurrentAction.ToString();
-            if (actionStr.Length > 12) actionStr = actionStr[..12];
+            string actionStr = GetDisplayAction(agent);
+            if (actionStr.Length > 15) actionStr = actionStr[..15];
             int actionWidth = Rl.MeasureText(actionStr, 11);
             Rl.DrawText(agent.Name, panelX + 14, y, 13, isExpanded ? Color.White : Color.LightGray);
             Rl.DrawText(actionStr, panelLeft + PanelWidth - 12 - actionWidth, y, 11, Color.Gray);
@@ -193,8 +197,9 @@ public class UIRenderer
             DrawBar(panelX + halfBar + 4, y, halfBar, 8, agent.Health / 100f, $"HP:{agent.Health:F0}", Color.Green);
             y += 12;
 
-            // Row 3: progress bar (only if busy)
-            if (agent.IsBusy && agent.ActionDurationTicks > 0f)
+            // Row 3: progress bar (only if busy, skip Move — sub-tick durations show 0/0)
+            if (agent.IsBusy && agent.ActionDurationTicks > 0f
+                && agent.PendingAction != ActionType.Move)
             {
                 float progress = agent.ActionProgress / agent.ActionDurationTicks;
                 string progressLabel = $"{agent.PendingAction} {(int)agent.ActionProgress}/{(int)agent.ActionDurationTicks}";
@@ -232,12 +237,20 @@ public class UIRenderer
         Rl.DrawText($"Position: ({agent.X}, {agent.Y})", panelX, y, 12, Color.LightGray);
         y += 16;
 
-        // Inventory
-        if (agent.Inventory.Count > 0)
+        // D19: Restlessness display
+        var restColor = agent.Restlessness > 60 ? new Color(255, 100, 50, (int)255)
+            : agent.Restlessness > 30 ? new Color(255, 200, 50, (int)255)
+            : new Color(100, 200, 100, (int)255);
+        Rl.DrawText($"Restless: {(int)agent.Restlessness}", panelX, y, 12, restColor);
+        y += 16;
+
+        // Inventory — only show items the agent actually has (hide zero-count entries)
+        var nonZeroInventory = agent.Inventory.Where(item => item.Value > 0).ToList();
+        if (nonZeroInventory.Count > 0)
         {
             Rl.DrawText("Inventory:", panelX, y, 12, Color.Yellow);
             y += 14;
-            foreach (var item in agent.Inventory)
+            foreach (var item in nonZeroInventory)
             {
                 Rl.DrawText($"  {item.Key}: {item.Value}", panelX, y, 11, Color.LightGray);
                 y += 13;
@@ -499,6 +512,33 @@ public class UIRenderer
                 }
             }
 
+            // Animals on tile
+            var animalsHere = world.GetAnimalsAt(selectedTile.Value.X, selectedTile.Value.Y);
+            if (animalsHere.Count > 0)
+            {
+                y += 4;
+                Rl.DrawText($"Animals: {animalsHere.Count}", panelX, y, 12, Color.Yellow);
+                y += 14;
+                var grouped = animalsHere.GroupBy(a => a.Species);
+                foreach (var group in grouped)
+                {
+                    int domestic = group.Count(a => a.IsDomesticated);
+                    string label = domestic > 0
+                        ? $"  {group.Key} x{group.Count()} ({domestic} domestic)"
+                        : $"  {group.Key} x{group.Count()}";
+                    Rl.DrawText(label, panelX, y, 11, Color.LightGray);
+                    y += 13;
+                }
+            }
+
+            // Carcasses on tile
+            var carcassesHere = world.Carcasses.Where(c => c.IsActive && c.X == selectedTile.Value.X && c.Y == selectedTile.Value.Y).ToList();
+            if (carcassesHere.Count > 0)
+            {
+                Rl.DrawText($"Carcasses: {carcassesHere.Count}", panelX, y, 12, new Color(180, 100, 60, 255));
+                y += 14;
+            }
+
             // Agents on tile
             var agentsHere = world.GetAgentsAt(selectedTile.Value.X, selectedTile.Value.Y);
             if (agentsHere.Count > 0)
@@ -518,7 +558,14 @@ public class UIRenderer
     public void RenderEventLog(int screenHeight, List<SimulationEvent> recentEvents,
                                 EventFilterLevel filterLevel)
     {
-        var filtered = recentEvents.Where(e => ShouldShowEvent(e.Type, filterLevel)).ToList();
+        // PERF-04: Reuse cached filtered list when event count and filter haven't changed
+        if (_cachedFilteredEvents == null || recentEvents.Count != _cachedEventCount || filterLevel != _cachedFilterLevel)
+        {
+            _cachedFilteredEvents = recentEvents.Where(e => ShouldShowEvent(e.Type, filterLevel)).ToList();
+            _cachedEventCount = recentEvents.Count;
+            _cachedFilterLevel = filterLevel;
+        }
+        var filtered = _cachedFilteredEvents;
         int maxEvents = 10;
         int eventCount = Math.Min(maxEvents, filtered.Count);
         int startIndex = Math.Max(0, filtered.Count - eventCount);
@@ -634,6 +681,41 @@ public class UIRenderer
             new Color(255, 255, 255, 100));
     }
 
+    /// <summary>Returns a descriptive label for the agent's current action.
+    /// For Move actions, shows context-aware labels instead of "Move".</summary>
+    private static string GetDisplayAction(Agent agent)
+    {
+        if (agent.CurrentAction != ActionType.Move)
+            return agent.CurrentAction.ToString();
+
+        // Move action — show what the agent is doing, not "Move 0/0"
+        if (agent.CurrentGoal == GoalType.ReturnHome)
+            return "Returning home";
+        if (agent.CurrentGoal == GoalType.GatherFoodAt)
+            return "Gathering food";
+        if (agent.CurrentGoal == GoalType.GatherResourceAt)
+        {
+            if (agent.GoalResource.HasValue)
+                return $"Gathering {agent.GoalResource.Value}";
+            return "Gathering";
+        }
+        if (agent.CurrentGoal == GoalType.Explore)
+            return "Exploring";
+        if (agent.CurrentGoal == GoalType.BuildAtTile)
+            return "Going to build";
+        if (agent.CurrentGoal == GoalType.SeekFood)
+            return "Seeking food";
+
+        // No goal — use mode for context
+        return agent.CurrentMode switch
+        {
+            BehaviorMode.Forage => "Foraging",
+            BehaviorMode.Explore => "Exploring",
+            BehaviorMode.Caretaker => "Heading home",
+            _ => "Walking"
+        };
+    }
+
     private static void DrawBar(int x, int y, int width, int height, float value, string label, Color color)
     {
         value = Math.Clamp(value, 0f, 1f);
@@ -663,12 +745,4 @@ public class UIRenderer
         }
     }
 
-    private static int CalculateTotalEdibleFood(World world)
-    {
-        int total = 0;
-        for (int x = 0; x < world.Width; x++)
-            for (int y = 0; y < world.Height; y++)
-                total += world.Grid[x, y].TotalFood();
-        return total;
-    }
 }

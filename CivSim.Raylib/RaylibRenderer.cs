@@ -25,8 +25,14 @@ public class RaylibRenderer : IDisposable
     private readonly AgentRenderer agentRenderer;
     private readonly UIRenderer uiRenderer = new();
     private readonly NotificationManager notificationManager = new();
+    private readonly AnimalRenderer animalRenderer;
     private readonly VisualEffectManager effectManager;
     private readonly TechTreeRenderer techTreeRenderer = new();
+    private readonly StructureRegistry structureRegistry;
+    private readonly ResourceSpriteRegistry resourceRegistry;
+
+    // PERF-01: Shared sprite batch for world-space atlas rendering
+    private readonly SpriteBatch spriteBatch = new();
 
     // Camera
     private Camera2D camera;
@@ -47,6 +53,9 @@ public class RaylibRenderer : IDisposable
     // Timing
     private float elapsedTime;
 
+    /// <summary>Interpolation alpha (0..1) between last tick and next tick. Set by caller each frame.</summary>
+    public float LerpAlpha { get; set; } = 1.0f;
+
     public RaylibRenderer(World world, int tileSize, int screenWidth, int screenHeight,
                            (int X, int Y)? spawnCenter = null)
     {
@@ -59,9 +68,18 @@ public class RaylibRenderer : IDisposable
         atlas = new SpriteAtlas();
         atlas.Load();
 
+        // Load structure registry
+        structureRegistry = new StructureRegistry();
+        structureRegistry.Load(atlas);
+
+        // Load resource sprite registry
+        resourceRegistry = new ResourceSpriteRegistry();
+        resourceRegistry.Load(atlas);
+
         // Create subsystems with atlas
-        worldRenderer = new WorldRenderer(atlas);
+        worldRenderer = new WorldRenderer(atlas, structureRegistry, resourceRegistry);
         agentRenderer = new AgentRenderer(atlas);
+        animalRenderer = new AnimalRenderer(atlas);
         effectManager = new VisualEffectManager(atlas);
 
         // Initialize camera centered on spawn or world center
@@ -84,7 +102,7 @@ public class RaylibRenderer : IDisposable
             Target = new Vector2(cx, cy),
             Offset = new Vector2(viewportWidth / 2f, screenHeight / 2f),
             Rotation = 0.0f,
-            Zoom = 0.7f
+            Zoom = 0.3f
         };
     }
 
@@ -116,14 +134,16 @@ public class RaylibRenderer : IDisposable
         }
 
         // ── Camera ──────────────────────────────────────────────────
-        // Mouse wheel zoom toward mouse position
+        // Mouse wheel zoom toward mouse position (BUG-01 fix: preserve point under cursor)
         float wheel = Rl.GetMouseWheelMove();
         if (wheel != 0)
         {
-            Vector2 mouseWorldPos = Rl.GetScreenToWorld2D(Rl.GetMousePosition(), camera);
+            var mouseScreen = Rl.GetMousePosition();
+            var beforeZoom = Rl.GetScreenToWorld2D(mouseScreen, camera);
             camera.Zoom += wheel * 0.1f;
-            camera.Zoom = Math.Clamp(camera.Zoom, 0.25f, 4.0f);
-            camera.Target = mouseWorldPos;
+            camera.Zoom = Math.Clamp(camera.Zoom, 0.08f, 4.0f);
+            var afterZoom = Rl.GetScreenToWorld2D(mouseScreen, camera);
+            camera.Target += beforeZoom - afterZoom;
         }
 
         // Pan with middle mouse button
@@ -161,7 +181,7 @@ public class RaylibRenderer : IDisposable
             {
                 camera.Target = new Vector2(world.Width * tileSize / 2f, world.Height * tileSize / 2f);
             }
-            camera.Zoom = 0.7f;
+            camera.Zoom = 0.3f;
         }
 
         // ── Selection ───────────────────────────────────────────────
@@ -249,12 +269,16 @@ public class RaylibRenderer : IDisposable
         if (Rl.IsKeyPressed(KeyboardKey.F))
             FollowMode = !FollowMode;
 
-        // Follow mode — camera tracks selected agent
+        // Follow mode — camera tracks selected agent (using interpolated visual position)
         if (FollowMode && SelectedAgent != null && SelectedAgent.IsAlive)
         {
-            camera.Target = new Vector2(
-                SelectedAgent.X * tileSize + tileSize / 2f,
-                SelectedAgent.Y * tileSize + tileSize / 2f);
+            var visualPos = agentRenderer.GetVisualPosition(SelectedAgent.Id, tileSize);
+            if (visualPos != Vector2.Zero)
+                camera.Target = visualPos + new Vector2(tileSize / 2f, tileSize / 2f);
+            else
+                camera.Target = new Vector2(
+                    SelectedAgent.X * tileSize + tileSize / 2f,
+                    SelectedAgent.Y * tileSize + tileSize / 2f);
         }
 
         // GDD v1.7: Keep dead agents selectable for DeathReportDuration (120 ticks) after death
@@ -315,18 +339,31 @@ public class RaylibRenderer : IDisposable
         // ── World-space rendering ───────────────────────────────────
         Rl.BeginMode2D(camera);
 
-        worldRenderer.Render(world, camera, tileSize, ShowGrid, screenWidth, screenHeight);
+        worldRenderer.Render(world, camera, tileSize, ShowGrid, screenWidth, screenHeight, spriteBatch);
+
+        animalRenderer.Render(world, camera, tileSize, screenWidth, screenHeight, stats.CurrentTick, LerpAlpha);
 
         if (SelectedTile.HasValue)
             uiRenderer.RenderTileSelection(SelectedTile.Value.X, SelectedTile.Value.Y, tileSize);
 
-        agentRenderer.Render(agents, world, camera, tileSize, SelectedAgent, elapsedTime);
+        agentRenderer.Render(agents, world, camera, tileSize, SelectedAgent, elapsedTime, LerpAlpha, spriteBatch);
+
+        // Path line for selected agent (drawn after agents so it's visible on top)
+        // Pass world so the renderer can compute display-only A* paths for greedy-movement goals
+        agentRenderer.RenderPathLine(SelectedAgent, tileSize, LerpAlpha, world);
+
+        // Fix 5: Hunt/chase line from selected agent to target animal (dark red dashed)
+        agentRenderer.RenderHuntLine(SelectedAgent, world, tileSize, LerpAlpha);
+
+        // Fix 5: Health bars on animals targeted in combat
+        animalRenderer.RenderCombatHealthBars(world, agents, tileSize, camera);
 
         effectManager.Render();
 
         Rl.EndMode2D();
 
         // ── Screen-space rendering ──────────────────────────────────
+        agentRenderer.RenderOverflowBadges(camera);
         agentRenderer.RenderLabels(agents, camera, tileSize, SelectedAgent);
 
         // Clip UI panel rendering to prevent text overflow past screen edge
@@ -372,6 +409,9 @@ public class RaylibRenderer : IDisposable
 
     public void Dispose()
     {
+        resourceRegistry.Dispose();
+        structureRegistry.Dispose();
+        animalRenderer.Dispose();
         atlas.Dispose();
     }
 }
