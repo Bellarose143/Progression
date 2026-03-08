@@ -11,6 +11,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - Always call Pen.ResetIdCounter() in test setup alongside Agent/Animal/Carcass
 - World gen uses `_largeWorld` (Width/Height >= 200) to switch between 350×350 and legacy resource amounts — preserves RNG sequence for small test worlds
 - Anti-pattern #11 (RNG cascade): ANY change to random call count/order cascades ALL downstream generation. Conditional branching on world size preserves old test baselines.
+- The "manual commit" (8948157) contains many pre-implemented changes — always verify ACs against existing code before writing new code
 - Pre-existing test failures also include: AnimalEntityTests.FleeSlow_CowMovesSlower, MoveDominanceTests.FounderAgent_Move_Below_60_Percent_LateGame
 
 ---
@@ -64,4 +65,19 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - **Learnings for future iterations:**
   - Math.Clamp crashes if min > max — always guard maxRadius against world size for small test worlds
   - Animal territory radius affects world gen (territory center clamping) — not just runtime behavior
+---
+
+## 2026-03-08 - US-004
+- **Verified** all camera, rendering, and pathfinding changes already implemented in prior session
+- All ACs confirmed met:
+  - Default zoom: 0.3f (RaylibRenderer.cs:184)
+  - Min/Max zoom: 0.08f–4.0f (RaylibRenderer.cs:144)
+  - LOD thresholds recalibrated: flat rects <0.1, textured 0.1–0.3, full sprites >0.3 (WorldRenderer.cs:79-85, AgentRenderer.cs:99-102)
+  - A* budgets: MaxNodes=40000, ExpensiveMaxNodes=80000 (SimplePathfinder.cs:12,15)
+  - Home pull: strong ~50 tiles, negligible ~150 tiles (UtilityScorer.cs:251-259, 1106-1130)
+- Build: 0 errors, 0 warnings
+- Files changed: prd.json (marked passes:true), progress.txt
+- **Learnings for future iterations:**
+  - The "manual commit of lots of old files" (8948157) contained many pre-implemented scale changes — always verify ACs before coding
+  - Camera zoom-to-cursor already uses GetScreenToWorld2D before/after pattern (RaylibRenderer.cs:141-146)
 ---
