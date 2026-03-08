@@ -10,7 +10,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - Integration tests are extremely slow (1+ min each running 50K ticks) — filter with --filter when possible
 - Always call Pen.ResetIdCounter() in test setup alongside Agent/Animal/Carcass
 - World gen uses `_largeWorld` (Width/Height >= 200) to switch between 350×350 and legacy resource amounts — preserves RNG sequence for small test worlds
-- Anti-pattern #11 (RNG cascade): ANY change to random call count/order cascades ALL downstream generation. Conditional branching on world size preserves old test baselines.
+- Anti-pattern #11 (RNG cascade): ANY change to random call count/order cascades ALL downstream generation. Conditional branching on world size preserves old test baselines. When adding new Random.Next() calls in AgentAI, use a separate RNG instance seeded deterministically (e.g., from tile position + tick).
 - The "manual commit" (8948157) contains many pre-implemented changes — always verify ACs against existing code before writing new code
 - Pre-existing test failures also include: AnimalEntityTests.FleeSlow_CowMovesSlower, MoveDominanceTests.FounderAgent_Move_Below_60_Percent_LateGame
 - Tests that use distance thresholds (e.g., CaretakerRange, CaretakerMTMEscapeDist) need grid sizes and agent positions scaled for new 350×350 constants — reference SimConfig values instead of hardcoding distances
@@ -99,4 +99,48 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Full test suite with integration tests takes ~40 minutes
   - Distance-based tests MUST use SimConfig constants, not hardcoded values — the scale migration changed many thresholds
   - CaretakerMTMEscapeDist=40 is very large; tests using 32×32 grids can't place agents that far away
+---
+
+## 2026-03-08 - US-006
+- **Verified** Settlement entity class already implemented from prior session (manual commit 8948157)
+- Settlement.cs upgraded from simple data holder to full entity:
+  - ShelterTier enum added (None, LeanTo, ReinforcedShelter, ImprovedShelter)
+  - Static _nextId pattern with ResetIdCounter() (matches Agent, Animal, Carcass, Pen)
+  - CenterTile as (int,int) tuple with backward-compatible CenterX/CenterY accessors
+  - Members list with backward-compatible ResidentAgentIds alias
+  - Structures as List<(int X, int Y, string Type)>
+  - ShelterQuality (ShelterTier), Territory (HashSet), SharedKnowledge (HashSet), Pens (List<Pen>)
+  - Internal constructor for explicit Id (used by SettlementDetector's founding group)
+- Registered in Simulation.cs as List<Settlement> Settlements
+- SettlementDetector.cs and SettlementKnowledge.cs updated for new Settlement API
+- Test files updated to call Settlement.ResetIdCounter() in setup
+- Build: 0 errors
+- Files changed: Settlement.cs, SettlementDetector.cs, SettlementKnowledge.cs, 8 test files, prd.json, ralph.sh
+- **Learnings for future iterations:**
+  - Settlement backward-compat accessors (CenterX/CenterY, ResidentAgentIds) keep SettlementDetector working without refactoring it
+  - The internal Settlement(int explicitId) constructor is used by SettlementDetector for founding groups with Id = -1
+---
+
+## 2026-03-08 - US-007
+- Implemented settlement founding on first shelter build and agent membership tracking
+- Changes to Agent.cs:
+  - Replaced `Community` (object?) placeholder with `SettlementId` (int?) property
+  - Child inherits parent's SettlementId in Reproduce() and is added to Settlement.Members
+- Changes to AgentAI.cs CompleteBuild:
+  - When shelter built and agent.SettlementId is null → found new Settlement with name, center tile, founding tick
+  - Builder becomes first member; nearby agents within SpawnClusterRadius join automatically
+  - When shelter built and agent already has settlement → add structure to existing settlement
+  - Uses separate RNG for name generation to avoid anti-pattern #11 (RNG cascade)
+- Changes to Simulation.cs:
+  - Settlements are now persistent (not recreated by SettlementDetector every detection interval)
+  - Removed SettlementDetector.Detect() replacement of Settlements list
+  - Kept persistent name tracking and knowledge propagation
+- Build: 0 errors
+- Tests: 329+ pass, pre-existing failures only (D25bBaseline seed 16001, DeathRegression ×3)
+- Files changed: Agent.cs, AgentAI.cs, Simulation.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - SettlementNameGenerator.Generate(random) consumes 2 Random.Next() calls — using AgentAI's random causes RNG cascade (anti-pattern #11). Always use a separate RNG seeded from deterministic values (tile pos + tick).
+  - Settlements are now persistent in Simulation.Settlements — no longer recreated each detection interval. New code should treat them as durable entities.
+  - The SettlementDetector.Detect() static method still exists but is no longer called from Simulation.Tick(). It may be useful for diagnostics or backward compat.
+  - Founding groups (Settlement with Id=-1) still created by SettlementKnowledge for pre-shelter knowledge sharing. They coexist with formal settlements (positive Ids).
 ---
