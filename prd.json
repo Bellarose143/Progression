@@ -73,7 +73,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "LOD thresholds in WorldRenderer.cs and AgentRenderer.cs. Camera in RaylibRenderer.cs. Pathfinding in SimplePathfinder.cs. Home pull in UtilityScorer.cs. Be careful with LOD — the zoom range is much wider now so the thresholds need thought (e.g., flat rectangles below 0.1, simplified 0.1-0.3, full sprites above 0.3)."
     },
     {
