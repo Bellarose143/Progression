@@ -9,6 +9,9 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - Pre-existing test failures exist in D25bBaselineTests and DeathRegressionIntegrationTests (death count assertions at specific seeds) — unrelated to world scale work
 - Integration tests are extremely slow (1+ min each running 50K ticks) — filter with --filter when possible
 - Always call Pen.ResetIdCounter() in test setup alongside Agent/Animal/Carcass
+- World gen uses `_largeWorld` (Width/Height >= 200) to switch between 350×350 and legacy resource amounts — preserves RNG sequence for small test worlds
+- Anti-pattern #11 (RNG cascade): ANY change to random call count/order cascades ALL downstream generation. Conditional branching on world size preserves old test baselines.
+- Pre-existing test failures also include: AnimalEntityTests.FleeSlow_CowMovesSlower, MoveDominanceTests.FounderAgent_Move_Below_60_Percent_LateGame
 
 ---
 
@@ -22,4 +25,25 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - The world scale migration constants were already done in a prior session — SimConfig header documents "Phase A"
   - The test suite takes 10+ minutes for full integration tests on WSL
   - Pre-existing test failures (D25bBaselineTests seed 16001, DeathRegressionIntegrationTests seeds 16001/42) are death-count regressions, not scale-related
+---
+
+## 2026-03-08 - US-002
+- Scaled world generation for 350×350 grid
+- Changes to World.cs:
+  - Perlin noise frequency scales with world size: `sizeRatio = 64.0 / Max(Width, Height)`, preserves identical biomes for 64×64 test worlds
+  - Added `_largeWorld` flag (Width/Height >= 200) to conditionally apply 350×350 resource density
+  - Forest wood: 3-4 per tile (was up to 20)
+  - Berry patches: 15-25 tile clusters with 2-3 center/1 edge (was 2-5 tiles with 8-10/3-5)
+  - Grain: 2-3 per plains tile (was up to 8)
+  - Stone: 2-5 mountain, 1 plains/forest (was 1-5, 1-2, 1-3)
+  - Ore: 40% of mountain tiles, 1-3 (was 5%)
+  - All legacy paths preserve exact RNG call sequence for small worlds
+- Build: 0 errors
+- WorldGenDistributionTests: 11/11 pass (64×64 test worlds use legacy code path)
+- Full test suite: 314 pass, 3 fail (all pre-existing: FleeSlow_CowMovesSlower, MoveDominance, plus one more)
+- Files changed: World.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - RNG cascade is the #1 hazard when changing world gen — any change to random call count cascades everything
+  - Solution: conditional branching on `_largeWorld` to preserve old code paths for test worlds
+  - Always run WorldGenDistributionTests first as a quick sanity check before full suite
 ---

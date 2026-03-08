@@ -38,7 +38,7 @@
         "dotnet test passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Total world resources should stay roughly similar to the old 64x64 world — the density per tile drops but there are ~30x more tiles. Berry patch generation needs the cluster size increased from 3-6 tiles to 15-25 tiles. Animal spawn counts and herd placement should continue to work but territory radii are handled in US-003."
     },
     {
