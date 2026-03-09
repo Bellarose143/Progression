@@ -161,7 +161,7 @@
         "dotnet test passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "The current per-structure deterrent range check in AnimalAI can be replaced with a territory membership check (is tile in any settlement territory?). Keep it efficient — territory is a HashSet so lookup is O(1). Recalculation only happens on structure add/remove, not every tick."
     },
     {

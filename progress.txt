@@ -173,3 +173,25 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Communal shelter quality changes cascade agent behavior (death counts shift across seeds) — always update baseline tests after shelter/reproduction changes
   - The HasShelterAccess pattern: settlement-first (O(structures) check), tile-scan fallback (O(radius²)) — more efficient for settlement members
 ---
+
+## 2026-03-09 - US-009
+- Implemented settlement territory system with 3-tile buffer around all structures
+- Changes to Settlement.cs:
+  - Added RecalculateTerritory(worldWidth, worldHeight) — iterates all structures, adds each tile + 3-tile buffer to Territory HashSet
+  - Added static IsInAnyTerritory(settlements, x, y) — O(1) per settlement lookup
+- Changes to AgentAI.cs:
+  - RecalculateTerritory() called after settlement founding and structure addition (CompleteBuild)
+  - Farm creation in TryDispatchTendFarm and CompleteTendFarm now adds farm to settlement structures and recalculates territory
+  - CheckInvoluntaryCombat: replaced O(n²) structure scan with O(1) territory membership check, kept home deterrent as fallback
+- Changes to AnimalAI.cs:
+  - CheckAggroTrigger: added optional settlements parameter, replaced HasNearbyStructure with territory membership check, kept home deterrent as fallback
+  - Removed unused HasNearbyStructure method
+- Build: 0 errors
+- Tests: 335/335 pass (0 failures)
+- Files changed: Settlement.cs, AgentAI.cs, AnimalAI.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Territory is a HashSet<(int,int)> — O(1) lookup replaces the O(range²) structure deterrent scan, significant performance improvement
+  - Farm structures were not being added to Settlement.Structures — only CompleteBuild shelter/campfire/pen were. Territory recalc exposed this gap.
+  - CheckAggroTrigger is defined but never called in the codebase — combat is fully agent-driven (CheckInvoluntaryCombat in AgentAI). The method exists for potential future use.
+  - Home deterrent kept as fallback for agents/animals near homes without formal settlement territory yet
+---
