@@ -228,7 +228,7 @@
         "dotnet test passes"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "The scoring values are from the PRD Part 4. The placement scorer selects the highest-scoring valid (empty, passable) tile. Ties broken by closest to agent to minimize movement. This replaces any existing 'build on current tile' or 'build on home tile' logic."
     },
     {
