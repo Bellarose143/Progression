@@ -34,7 +34,10 @@ public static class AnimalAI
                     else
                     {
                         int dist = Math.Max(Math.Abs(tamer.X - animal.X), Math.Abs(tamer.Y - animal.Y));
-                        if (dist > animal.DetectionRange + 2)
+                        // US-016: Scale detection range by biome
+                        var tameTile = world.GetTile(animal.X, animal.Y);
+                        int tameDetection = (int)(animal.DetectionRange * SimConfig.GetBiomePerceptionMultiplier(tameTile.Biome));
+                        if (dist > tameDetection + 2)
                         {
                             // Out of perception range — faster decay
                             if (ticksSinceOffering % SimConfig.TameOutOfRangeDecayRate == 0)
@@ -111,9 +114,13 @@ public static class AnimalAI
         if (animal.State == AnimalState.Aggressive) return false;
         if (animal.FleeCooldown > 0) return false; // Recently fled, on cooldown
 
-        int detectionRange = animal.State == AnimalState.Sleeping
+        // US-016: Scale detection range by current tile biome
+        var animalTile = world.GetTile(animal.X, animal.Y);
+        float biomeMultiplier = SimConfig.GetBiomePerceptionMultiplier(animalTile.Biome);
+        int baseDetection = animal.State == AnimalState.Sleeping
             ? animal.DetectionRange / 2
             : animal.DetectionRange;
+        int detectionRange = Math.Max(1, (int)(baseDetection * biomeMultiplier));
 
         Agent? nearest = null;
         int nearestDist = int.MaxValue;
@@ -381,8 +388,11 @@ public static class AnimalAI
             return;
 
         // Check if any agent still in detection range + 2
+        // US-016: Scale detection range by biome
+        var fleeTile = world.GetTile(animal.X, animal.Y);
+        int fleeDetection = (int)(animal.DetectionRange * SimConfig.GetBiomePerceptionMultiplier(fleeTile.Biome));
         bool agentNearby = false;
-        int escapeRange = animal.DetectionRange + 2;
+        int escapeRange = fleeDetection + 2;
         foreach (var agent in agents)
         {
             if (!agent.IsAlive) continue;

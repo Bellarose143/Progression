@@ -262,7 +262,7 @@ public static class SimConfig
     /// Default fallback; biome-specific radii below are used when biome-dependent perception is enabled.</summary>
     public static readonly int PerceptionRadius = 20;
 
-    // ── Biome-Specific Perception Radii (for future biome-dependent perception) ──
+    // ── Biome-Specific Perception Radii ──
     /// <summary>Perception radius on Plains tiles.</summary>
     public static readonly int PerceptionRadiusPlains = 30;
     /// <summary>Perception radius on Forest tiles.</summary>
@@ -271,6 +271,24 @@ public static class SimConfig
     public static readonly int PerceptionRadiusMountain = 20;
     /// <summary>Perception radius on Desert tiles.</summary>
     public static readonly int PerceptionRadiusDesert = 35;
+    /// <summary>Perception radius when on a tile adjacent to water (open sightlines).</summary>
+    public static readonly int PerceptionRadiusWaterEdge = 25;
+
+    /// <summary>Returns the perception radius for the given biome type.</summary>
+    public static int GetPerceptionRadius(BiomeType biome) => biome switch
+    {
+        BiomeType.Plains => PerceptionRadiusPlains,
+        BiomeType.Forest => PerceptionRadiusForest,
+        BiomeType.Mountain => PerceptionRadiusMountain,
+        BiomeType.Desert => PerceptionRadiusDesert,
+        BiomeType.Water => PerceptionRadius, // Agents shouldn't be on water, fallback
+        _ => PerceptionRadius,
+    };
+
+    /// <summary>Returns the biome-based perception multiplier relative to the default PerceptionRadius.
+    /// Used to scale animal detection ranges by biome.</summary>
+    public static float GetBiomePerceptionMultiplier(BiomeType biome) =>
+        (float)GetPerceptionRadius(biome) / PerceptionRadius;
 
     /// <summary>v1.8 Corrections: Chebyshev radius for immediate perception (every tick).
     /// 1-2 tiles per corrections doc. Used for interrupt checks.</summary>

@@ -1625,8 +1625,13 @@ public class Agent
 
         if (doActiveScan)
         {
+            // US-016: Biome-dependent perception radius
+            var currentTile = world.GetTile(X, Y);
+            int activeRadius = SimConfig.GetPerceptionRadius(currentTile.Biome);
+            // Water edge bonus: open sightlines across water
+            if (world.HasAdjacentBiome(X, Y, BiomeType.Water))
+                activeRadius = Math.Max(activeRadius, SimConfig.PerceptionRadiusWaterEdge);
             // D25d: Dog companion extends active perception radius
-            int activeRadius = SimConfig.PerceptionRadius;
             if (HasDogCompanion(world.Animals))
                 activeRadius += SimConfig.DogPerceptionBonus;
             ScanRadius(world, currentTick, activeRadius);

@@ -110,7 +110,8 @@ public class D25bBaselineTests
         // Seed 42: 1 death (Eli), seed 1337: 1 death (Quinn), others: 0.
         // US-008: Communal shelter quality cascade. Seed 16001: 0→1 (Lily), seed 55555: 0→1 (Cole).
         // US-014: Farm directional placement cascade. Seed 16001: 1→2, seed 55555: 1→0.
-        int expectedDeaths = seed switch { 42 => 1, 1337 => 1, 16001 => 2, 55555 => 0, _ => 0 };
+        // US-016: Biome-dependent perception cascade. Seed 16001: 2→0, seed 1337: 1→0.
+        int expectedDeaths = seed switch { 42 => 1, 16001 => 0, _ => 0 };
         Assert.Equal(expectedDeaths, dead.Count);
     }
 

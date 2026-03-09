@@ -622,7 +622,7 @@ public class World
     }
 
     /// <summary>Returns true if any of the 8 neighbors is the specified biome.</summary>
-    private bool HasAdjacentBiome(int x, int y, BiomeType biome)
+    public bool HasAdjacentBiome(int x, int y, BiomeType biome)
     {
         for (int dx = -1; dx <= 1; dx++)
             for (int dy = -1; dy <= 1; dy++)

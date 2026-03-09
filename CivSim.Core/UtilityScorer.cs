@@ -2038,7 +2038,11 @@ public static class UtilityScorer
     /// </summary>
     private static float CalculateFoodSaturation(Agent agent, World world)
     {
-        int radius = SimConfig.PerceptionRadius;
+        // US-016: Biome-dependent perception radius
+        var currentTile = world.GetTile(agent.X, agent.Y);
+        int radius = SimConfig.GetPerceptionRadius(currentTile.Biome);
+        if (world.HasAdjacentBiome(agent.X, agent.Y, BiomeType.Water))
+            radius = Math.Max(radius, SimConfig.PerceptionRadiusWaterEdge);
         int nearbyFood = 0;
         int nearbyPop = 0;
 
@@ -2356,12 +2360,17 @@ public static class UtilityScorer
         }
 
         // Also check directly visible animals (within perception range)
+        // US-016: Biome-dependent perception radius
+        var agentTile = world.GetTile(agent.X, agent.Y);
+        int perceptionRange = SimConfig.GetPerceptionRadius(agentTile.Biome);
+        if (world.HasAdjacentBiome(agent.X, agent.Y, BiomeType.Water))
+            perceptionRange = Math.Max(perceptionRange, SimConfig.PerceptionRadiusWaterEdge);
         foreach (var animal in world.Animals)
         {
             if (!animal.IsAlive || animal.IsDomesticated) continue;
             if (animal.Species != AnimalSpecies.Wolf || !animal.IsPup) continue;
             int dist = Math.Max(Math.Abs(animal.X - agent.X), Math.Abs(animal.Y - agent.Y));
-            if (dist <= SimConfig.PerceptionRadius && dist < bestDist)
+            if (dist <= perceptionRange && dist < bestDist)
             {
                 bestDist = dist;
                 bestPup = animal;

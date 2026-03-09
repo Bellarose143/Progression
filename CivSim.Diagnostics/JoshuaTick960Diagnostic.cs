@@ -290,7 +290,11 @@ public static class JoshuaTick960Diagnostic
         // ── Experiment scoring deep dive ──
         Console.WriteLine($"\n  Experiment scoring deep dive:");
         // CalculateFoodSaturation
-        int radius = SimConfig.PerceptionRadius;
+        // US-016: Biome-dependent perception radius
+        var diagTile = world.GetTile(joshua.X, joshua.Y);
+        int radius = SimConfig.GetPerceptionRadius(diagTile.Biome);
+        if (world.HasAdjacentBiome(joshua.X, joshua.Y, BiomeType.Water))
+            radius = Math.Max(radius, SimConfig.PerceptionRadiusWaterEdge);
         int nearbyFood = 0;
         int nearbyPop = 0;
         for (int dx = -radius; dx <= radius; dx++)

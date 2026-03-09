@@ -275,7 +275,7 @@
         "dotnet test passes"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Mountain(high) vs Mountain(ground) may need an elevation concept or just use Mountain=20 for now with high elevation as future work. Water edge = agent is on a tile adjacent to water. The simplest implementation: check current tile biome, return the corresponding radius."
     },
     {
