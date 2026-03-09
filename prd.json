@@ -292,7 +292,7 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "Frustum culling likely already exists from D26 — verify it works at the new scale. The biggest risk is perception scanning all tiles. Spatial index or grid-based neighbor lookup is essential. Profile before optimizing — measure, don't guess. The creator has noted 1 FPS at 200 pop with 4% CPU = architectural problem."
     },
     {

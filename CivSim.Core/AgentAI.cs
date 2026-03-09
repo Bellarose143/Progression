@@ -5486,7 +5486,7 @@ public class AgentAI
         if (gathered > 0)
         {
             // Track gathering on tile for overgrazing
-            tile.TicksSinceLastGathered = 0;
+            tile.LastGatheredTick = currentTick;
 
             // GDD v1.7.1: Co-gathering builds social bonds
             var coLocated = world.GetAgentsAt(tx, ty);

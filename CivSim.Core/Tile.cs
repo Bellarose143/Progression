@@ -58,8 +58,8 @@ public class Tile
     /// <summary>Tick when this farm tile was last tended. -999 = never.</summary>
     public int LastTendedTick { get; set; } = -999;
 
-    /// <summary>Ticks since this tile was last gathered from. Used for overgrazing recovery.</summary>
-    public int TicksSinceLastGathered { get; set; }
+    /// <summary>Tick when this tile was last gathered from. Used for overgrazing recovery (computed on demand).</summary>
+    public int LastGatheredTick { get; set; }
 
     /// <summary>Per-tile random offset for resource regeneration. Prevents synchronized regen spikes.</summary>
     public int RegenOffset { get; set; }

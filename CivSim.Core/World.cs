@@ -921,7 +921,10 @@ public class World
     /// </summary>
     public void BuildPressureMap()
     {
-        PressureMap = new int[Width, Height];
+        if (PressureMap == null)
+            PressureMap = new int[Width, Height];
+        else
+            Array.Clear(PressureMap, 0, PressureMap.Length);
         int radius = SimConfig.GatheringPressureRadius;
 
         foreach (var agents in AgentsByPosition.Values)
@@ -957,8 +960,8 @@ public class World
             {
                 var tile = Grid[x, y];
 
-                // Increment TicksSinceLastGathered for overgrazing recovery
-                tile.TicksSinceLastGathered++;
+                // Mountain tiles have no renewable resources — skip entirely
+                if (tile.Biome == BiomeType.Mountain) continue;
 
                 RegenerateTile(tile, currentTick);
             }
@@ -1033,7 +1036,8 @@ public class World
         // Critical overgrazing: regen paused until tile ungathered for recovery period
         if (ratio < SimConfig.OvergrazingThresholdCritical)
         {
-            if (tile.TicksSinceLastGathered < SimConfig.OvergrazingRecoveryTicks)
+            int ticksSinceGathered = currentTick - tile.LastGatheredTick;
+            if (ticksSinceGathered < SimConfig.OvergrazingRecoveryTicks)
                 return; // Still recovering — no regen
         }
 

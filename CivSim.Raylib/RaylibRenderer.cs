@@ -437,7 +437,7 @@ public class RaylibRenderer : IDisposable
 
     private void RenderTerritoryOverlay(List<Settlement> settlements)
     {
-        // Frustum culling — only render visible tiles
+        // Frustum culling — iterate only visible tiles and check territory membership (O(1) per tile)
         Vector2 topLeft = Rl.GetScreenToWorld2D(new Vector2(0, 0), camera);
         Vector2 bottomRight = Rl.GetScreenToWorld2D(new Vector2(screenWidth, screenHeight), camera);
         int startX = Math.Max(0, (int)Math.Floor(topLeft.X / tileSize) - 1);
@@ -453,26 +453,29 @@ public class RaylibRenderer : IDisposable
             var fillColor = TerritoryColors[si % TerritoryColors.Length];
             var borderColor = TerritoryBorderColors[si % TerritoryBorderColors.Length];
 
-            foreach (var (tx, ty) in settlement.Territory)
+            // Iterate visible tile range, check territory membership (O(1) HashSet lookup)
+            for (int tx = startX; tx <= endX; tx++)
             {
-                // Frustum cull
-                if (tx < startX || tx > endX || ty < startY || ty > endY) continue;
+                for (int ty = startY; ty <= endY; ty++)
+                {
+                    if (!settlement.Territory.Contains((tx, ty))) continue;
 
-                int px = tx * tileSize;
-                int py = ty * tileSize;
+                    int px = tx * tileSize;
+                    int py = ty * tileSize;
 
-                // Fill tile with semi-transparent color
-                Rl.DrawRectangle(px, py, tileSize, tileSize, fillColor);
+                    // Fill tile with semi-transparent color
+                    Rl.DrawRectangle(px, py, tileSize, tileSize, fillColor);
 
-                // Draw border edges where territory meets non-territory
-                if (!settlement.Territory.Contains((tx - 1, ty)))
-                    Rl.DrawLine(px, py, px, py + tileSize, borderColor);
-                if (!settlement.Territory.Contains((tx + 1, ty)))
-                    Rl.DrawLine(px + tileSize, py, px + tileSize, py + tileSize, borderColor);
-                if (!settlement.Territory.Contains((tx, ty - 1)))
-                    Rl.DrawLine(px, py, px + tileSize, py, borderColor);
-                if (!settlement.Territory.Contains((tx, ty + 1)))
-                    Rl.DrawLine(px, py + tileSize, px + tileSize, py + tileSize, borderColor);
+                    // Draw border edges where territory meets non-territory
+                    if (!settlement.Territory.Contains((tx - 1, ty)))
+                        Rl.DrawLine(px, py, px, py + tileSize, borderColor);
+                    if (!settlement.Territory.Contains((tx + 1, ty)))
+                        Rl.DrawLine(px + tileSize, py, px + tileSize, py + tileSize, borderColor);
+                    if (!settlement.Territory.Contains((tx, ty - 1)))
+                        Rl.DrawLine(px, py, px + tileSize, py, borderColor);
+                    if (!settlement.Territory.Contains((tx, ty + 1)))
+                        Rl.DrawLine(px, py + tileSize, px + tileSize, py + tileSize, borderColor);
+                }
             }
         }
     }
