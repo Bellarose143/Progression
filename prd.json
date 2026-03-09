@@ -1,315 +1,56 @@
 {
   "project": "CivSim",
-  "branchName": "ralph/world-scale-settlement",
-  "description": "World Scale Migration & Settlement System — 64x64 to 350x350 grid, Settlement entity, structure placement intelligence, terrain-dependent perception",
+  "branchName": "ralph/test-categorization",
+  "description": "Test Categorization — Tag tests as Slow (10K+ ticks) and Integration (full Simulation/World) so Ralph's quality gate only runs the fast suite (~42s instead of 35min)",
   "userStories": [
     {
       "id": "US-001",
-      "title": "SimConfig world dimensions and distance constants for 350x350",
-      "description": "As a developer, I need all SimConfig distance/range constants recalibrated for the 350x350 world scale so that agent behavior maps to the same real-world distances at the new tile size (~15ft per tile instead of ~300ft).",
+      "title": "Tag all Slow tests with Trait annotation",
+      "description": "As a developer, I need every test that runs 10,000+ simulation ticks or takes 30+ seconds wall time tagged with [Trait(\"Category\", \"Slow\")] so they are excluded from Ralph's fast quality gate.",
       "acceptanceCriteria": [
-        "SimConfig.WorldWidth and SimConfig.WorldHeight default to 350 (parameterized, not hardcoded)",
-        "All perception constants updated: Plains=30, Forest=12, Mountain=20, Desert=35 (but still a single PerceptionRadius for now — biome-dependent is Phase D)",
-        "Home/settlement constants updated: SpawnClusterRadius=12, StructureBuildRange=20, CaretakerRange=10, HomeLocalGatherRange=8, FoodSurplusCheckRadius=15, ShelterNearbyRadius=15",
-        "Exploration constants updated: ExploreReturnPathCheck=15, ExploreStuckDetectionTiles=8, MaxExploreDistance=120, BlacklistRadius=8",
-        "Foraging constants updated: ForageCommitmentDistance=70, ForageGiveUpDistance=100",
-        "Combat constants updated: DisengageFleeDistance=5",
-        "Trapping constants updated: TrapPlacementRange=25, TrapCatchRadius=3",
-        "No hardcoded 64 references remain for world size (grep confirms)",
-        "Typecheck passes"
+        "Every test calling simulation.RunForTicks(n) where n >= 10000 has [Trait(\"Category\", \"Slow\")]",
+        "Known slow tests tagged: DeathRegressionIntegrationTests, D25bBaselineTests, D25dFinalValidation tests, and any other 10K+ tick tests found via grep",
+        "Tests with both Slow and Integration criteria get both traits: [Trait(\"Category\", \"Slow\")][Trait(\"Category\", \"Integration\")]",
+        "No test without the Slow trait calls RunForTicks with n >= 10000 (grep verification)",
+        "Typecheck passes",
+        "dotnet test --filter \"Category!=Slow\" passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Keep old 64x64 values as comments for reference. The world size must be parameterized so tests can still use smaller grids. Many constants may not exist yet in SimConfig — create them. Some constants may be inline magic numbers in AgentAI.cs/UtilityScorer.cs — extract to SimConfig."
+      "notes": "Search for RunForTicks, RunFor, and any loop calling simulation.Tick() with high iteration counts. Check all test projects. The spec says ~12 heavy tests exist. Tests can have multiple Trait attributes."
     },
     {
       "id": "US-002",
-      "title": "Scale world generation for 350x350 grid",
-      "description": "As a developer, I need biome generation (Perlin noise) and resource distribution to produce a reasonable world at 350x350 tiles with per-tile density appropriate for ~15ft tiles.",
+      "title": "Tag all Integration tests with Trait annotation",
+      "description": "As a developer, I need every test that creates a full Simulation or World instance with world generation tagged with [Trait(\"Category\", \"Integration\")] to distinguish them from pure unit tests.",
       "acceptanceCriteria": [
-        "Perlin noise frequency adjusted so biome regions are proportionally sized at 350x350 (roughly 5-6x larger patches to match the ~5.5x linear scale increase)",
-        "Wood per forest tile: 3-4 (down from 20)",
-        "Berry patches: clusters of 15-25 forest tiles with 2-3 berries center, 1 edge",
-        "Grain per plains tile: 2-3 (down from 15)",
-        "Stone per mountain tile: 2-5 (down from 15-40), stone in plains/forest: 1",
-        "Ore in mountain (40% chance): 1-3 (down from 8-15)",
-        "World generation completes in under 2 seconds for 350x350",
+        "Every test that calls new Simulation(...) or new World(...) with full world generation has [Trait(\"Category\", \"Integration\")]",
+        "Tests using TestSimBuilder (which creates real World instances) are tagged Integration",
+        "Tests already tagged Slow that also create full simulations get both traits",
+        "Tests using mocked/stub worlds for pure unit testing are NOT tagged Integration",
+        "World generation distribution tests (WorldGenDistributionTests) are tagged Integration",
         "Typecheck passes",
         "dotnet test --filter \"Category!=Slow\" passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Total world resources should stay roughly similar to the old 64x64 world — the density per tile drops but there are ~30x more tiles. Berry patch generation needs the cluster size increased from 3-6 tiles to 15-25 tiles. Animal spawn counts and herd placement should continue to work but territory radii are handled in US-003."
+      "passes": false,
+      "notes": "Search for 'new Simulation(', 'new World(', 'TestSimBuilder', and similar patterns. TestSimBuilder creates real World instances so those tests qualify. Be careful not to tag tests that only use simple World stubs or mocked tiles. The spec says the Integration trait is informational — it does NOT exclude from Ralph's fast gate (only Slow does)."
     },
     {
       "id": "US-003",
-      "title": "Recalibrate animal system for new world scale",
-      "description": "As a developer, I need animal territory radii, spawn density, detection/flee ranges, and settlement deterrent ranges updated for 350x350.",
+      "title": "Validate categorization and fast suite timing",
+      "description": "As a developer, I need to verify the fast suite (Category!=Slow) completes in under 60 seconds and the full suite still passes, confirming the categorization is correct.",
       "acceptanceCriteria": [
-        "Animal territory radii updated: Rabbit=8, Deer=15, Cow=12, Sheep=10, Boar=12, Wolf=25",
-        "Flee detection ranges updated: Deer=15, Rabbit=6, Cow=10, Sheep=12",
-        "Wolf aggression range=8, wolf pack convergence=15",
-        "Boar charge range=5",
-        "Structure/settlement deterrent range=10",
-        "Animal spawn density appropriate for 350x350 (similar total animal count, spread over larger area)",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
+        "dotnet test --filter \"Category!=Slow\" completes in under 60 seconds",
+        "dotnet test (full suite) passes — no tests broken by trait additions",
+        "No untagged test takes more than 30 seconds (verified by running full suite and checking timing)",
+        "Fast suite runs 300+ tests (bulk of the suite is fast)",
+        "Slow suite (dotnet test --filter \"Category=Slow\") runs ~12 tests",
+        "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "These are in AnimalAI.cs, AnimalSpecies.cs, and possibly SimConfig. Some may be hardcoded — extract to named constants. The total animal population should be similar to the current sim, not 30x more animals."
-    },
-    {
-      "id": "US-004",
-      "title": "Camera, rendering, and pathfinding for new scale",
-      "description": "As a developer, I need the camera zoom range, LOD thresholds, and pathfinding budgets calibrated so the 350x350 world is navigable and performant.",
-      "acceptanceCriteria": [
-        "Default zoom changed to 0.3x (from 1.0x)",
-        "Min zoom changed to 0.08x (full 350x350 visible)",
-        "Max zoom stays 4.0x",
-        "LOD thresholds recalibrated for new zoom range (flat rectangles at very low zoom, full sprites at higher zoom)",
-        "A* node budget increased: simple=40000, expensive=80000",
-        "Home pull formula range scaled: strong pull ~50 tiles, negligible ~150 tiles",
-        "Typecheck passes"
-      ],
-      "priority": 4,
-      "passes": true,
-      "notes": "LOD thresholds in WorldRenderer.cs and AgentRenderer.cs. Camera in RaylibRenderer.cs. Pathfinding in SimplePathfinder.cs. Home pull in UtilityScorer.cs. Be careful with LOD — the zoom range is much wider now so the thresholds need thought (e.g., flat rectangles below 0.1, simplified 0.1-0.3, full sprites above 0.3)."
-    },
-    {
-      "id": "US-005",
-      "title": "Phase A integration validation",
-      "description": "As a developer, I need to verify that agents survive, explore, hunt, reproduce, and discover on the 350x350 map without scale-related regressions.",
-      "acceptanceCriteria": [
-        "Headless sim (CivSim.Diagnostics) runs 50K ticks on seed 42 without crash",
-        "At least 2 agents survive to tick 50K (no mass starvation from scale bugs)",
-        "Agents discover at least 5 recipes by tick 50K (knowledge system still works)",
-        "At least 1 reproduction event occurs (reproduction still triggers at new distances)",
-        "No agent stuck in infinite pathfinding loop (A* budget sufficient)",
-        "All existing tests that don't hardcode 64x64 dimensions pass",
-        "Tests that hardcode 64x64 are updated to use SimConfig or parameterized world size",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "This is a validation story. If agents are dying or stuck, fix the root cause (likely a distance constant that wasn't updated). Some tests may explicitly create 64x64 worlds — those are fine, they test at that scale. The concern is tests that assume the DEFAULT world is 64x64. Run CivSim.Diagnostics with --death-traces."
-    },
-    {
-      "id": "US-006",
-      "title": "Create Settlement entity class with data model",
-      "description": "As a developer, I need a Settlement class as a first-class simulation entity with Id, Name, CenterTile, Members, Structures, ShelterQuality, Territory, and SharedKnowledge.",
-      "acceptanceCriteria": [
-        "Settlement.cs created in CivSim.Core with properties: Id, Name, FoundedTick, CenterTile (int,int), Members (List<int>), Structures (list), ShelterQuality (ShelterTier enum or int), Territory (HashSet<(int,int)>), SharedKnowledge (HashSet<string>), Pens (List<Pen>)",
-        "Settlement has a static ResetIdCounter() method following the existing pattern (Agent, Animal, Carcass, Pen)",
-        "ShelterTier enum created if it doesn't exist (None, LeanTo, Shelter, ImprovedShelter — or whatever tiers the existing code uses)",
-        "Settlement is registered in Simulation.cs (List<Settlement>, accessible by Id)",
-        "Typecheck passes"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "This is data model only — no behavior yet. Check existing shelter tier logic in Agent.cs and Simulation.cs to understand what tiers exist. The Pen list moves from wherever it currently lives to under Settlement. Follow the same static _nextId pattern used by Agent, Animal, Carcass, Pen."
-    },
-    {
-      "id": "US-007",
-      "title": "Settlement founding and agent membership",
-      "description": "As a developer, I need settlements to be founded when the first shelter is built, and agents to be tracked as members of their settlement.",
-      "acceptanceCriteria": [
-        "When the first shelter structure is completed, a Settlement is created with FoundedTick = current tick",
-        "The agent who built the shelter becomes the first member",
-        "Agent class has a SettlementId property (nullable int)",
-        "Children born to settlement members automatically join the same settlement",
-        "Agents nearby (within SpawnClusterRadius) when settlement is founded are added as members",
-        "Settlement.Name is generated (use existing settlement naming if any, otherwise curated list)",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Check how settlements are currently tracked (likely just a name on the agent or a settlement string). This replaces the old system with the real Settlement entity. FoundedTick must be the tick the shelter build action completes, NOT the tick the game started or ended."
-    },
-    {
-      "id": "US-008",
-      "title": "Communal shelter quality system",
-      "description": "As a developer, I need the settlement's shelter quality to be the best shelter built by any member, and all members to benefit from it.",
-      "acceptanceCriteria": [
-        "Settlement.ShelterQuality tracks the highest shelter tier among all settlement structures",
-        "When a new shelter is built, Settlement.ShelterQuality is recalculated",
-        "Shelter built on same tile as existing shelter replaces the old one",
-        "All shelter quality checks in agent logic reference Settlement.ShelterQuality (not individual agent shelter)",
-        "Exposure protection and comfort checks use settlement shelter quality",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Grep for all places that check shelter quality or shelter tier on agents. They should now go through Settlement. Agents without a settlement (shouldn't happen normally, but edge case) fall back to individual tile checks."
-    },
-    {
-      "id": "US-009",
-      "title": "Settlement territory system",
-      "description": "As a developer, I need settlements to claim territory around their structures, with a buffer radius, recalculated when structures change.",
-      "acceptanceCriteria": [
-        "Settlement.Territory is a HashSet<(int,int)> of claimed tiles",
-        "Every tile containing a settlement structure is territory",
-        "A buffer of 3 tiles around each structure tile is also territory",
-        "Territory is recalculated when structures are added or removed",
-        "Animal aggression is suppressed within settlement territory (replaces per-structure deterrent check)",
-        "Farm tiles are included in territory",
-        "Settlement.RecalculateTerritory() method exists and is called on structure changes",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "The current per-structure deterrent range check in AnimalAI can be replaced with a territory membership check (is tile in any settlement territory?). Keep it efficient — territory is a HashSet so lookup is O(1). Recalculation only happens on structure add/remove, not every tick."
-    },
-    {
-      "id": "US-010",
-      "title": "Territory visual overlay in renderer",
-      "description": "As a developer, I need a togglable visual overlay showing settlement territory boundaries in the renderer.",
-      "acceptanceCriteria": [
-        "Pressing a hotkey (T or similar) toggles territory overlay on/off",
-        "Overlay is OFF by default",
-        "When ON, territory tiles are tinted with a semi-transparent color per settlement",
-        "Territory boundary edges (tiles where territory meets non-territory) are drawn with a visible border",
-        "Overlay is drawn below agents/structures but above terrain",
-        "Overlay respects LOD (not drawn at very low zoom to avoid clutter)",
-        "Typecheck passes"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "This is renderer-only. Settlement territory data comes from Settlement.Territory. If multiple settlements exist (future), use different colors per settlement. Keep it simple — semi-transparent rectangles over territory tiles, with slightly darker border on edges."
-    },
-    {
-      "id": "US-011",
-      "title": "Reproduction uses settlement shelter quality",
-      "description": "As a developer, I need reproduction checks to reference the agent's settlement shelter quality instead of checking for nearby shelter structures on tiles.",
-      "acceptanceCriteria": [
-        "Reproduction eligibility checks Settlement.ShelterQuality instead of scanning nearby tiles for shelter",
-        "Agents without a settlement cannot reproduce (they need to build shelter first, which founds a settlement)",
-        "Existing reproduction tests updated to use Settlement-based shelter checks",
-        "No regression in reproduction behavior (agents still reproduce when conditions are met)",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Grep for reproduction-related shelter checks in AgentAI.cs and Agent.cs. Replace tile-proximity shelter checks with Settlement.ShelterQuality checks. The reproduction balance constants (MinAge=25, Cooldown=40, BaseChance=0.35, FoodCost=5) are UNCHANGED."
-    },
-    {
-      "id": "US-012",
-      "title": "SettlementZones system for emergent zone tracking",
-      "description": "As a developer, I need a SettlementZones class that tracks weighted average centers for residential, agricultural, animal, and storage zones, recalculated when structures change.",
-      "acceptanceCriteria": [
-        "SettlementZones class with ResidentialCenter, AgriculturalCenter, AnimalCenter, StorageCenter as (int,int) tuples",
-        "Each center is the weighted average position of all structures of that type",
-        "Recalculate() method updates all centers",
-        "Settlement.Zones property of type SettlementZones exists",
-        "Zones are recalculated when structures are added or removed (same trigger as territory recalc)",
-        "Centers default to settlement CenterTile when no structures of that type exist yet",
-        "Typecheck passes"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "Structure type mapping: Shelter/ImprovedShelter/Campfire → Residential, Farm → Agricultural, Pen → Animal, Granary → Storage. This is data infrastructure — placement scoring uses it in the next stories."
-    },
-    {
-      "id": "US-013",
-      "title": "Structure placement scoring framework + shelter/campfire scoring",
-      "description": "As a developer, I need a placement scoring system that evaluates candidate tiles when building structures, starting with shelter and campfire placement rules.",
-      "acceptanceCriteria": [
-        "PlacementScorer class (or method) that takes a structure type and returns the best tile within build range",
-        "Candidate tiles within 20 tiles of settlement center are evaluated",
-        "Shelter scoring: +3.0 per tile closer to ResidentialCenter, +1.0 adjacent to existing shelter, -2.0 on farm tiles, -2.0 on pen tiles, +0.5 Plains, -0.5 Mountain",
-        "Campfire scoring: +3.0 within 2 tiles of ResidentialCenter, -2.0 on farm tiles, +1.0 adjacent to shelter",
-        "Agent build actions use the placement scorer instead of building on current tile",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "The scoring values are from the PRD Part 4. The placement scorer selects the highest-scoring valid (empty, passable) tile. Ties broken by closest to agent to minimize movement. This replaces any existing 'build on current tile' or 'build on home tile' logic."
-    },
-    {
-      "id": "US-014",
-      "title": "First farm directional placement + farm extension scoring",
-      "description": "As a developer, I need the first farm tile to be placed intelligently by scanning for the best agricultural direction from the settlement center, and subsequent farms to extend contiguously from existing farms.",
-      "acceptanceCriteria": [
-        "First farm placement algorithm: scan 8 directions from ResidentialCenter, count Plains tiles within 15 tiles, select direction with most suitable farmland, place first farm 8-10 tiles from center in that direction",
-        "Subsequent farm scoring: +3.0 adjacent to existing farm tiles, +2.0 within 5 tiles of AgriculturalCenter, -3.0 within 5 tiles of ResidentialCenter, +1.0 Plains, -1.0 Forest, -5.0 on existing structure tiles",
-        "Farms grow as contiguous blocks rather than scattered single tiles",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "The first farm placement is special — it defines where the entire agricultural zone develops. After the first farm, subsequent farms use the standard scoring which strongly favors adjacency (+3.0), naturally growing the farm as a block."
-    },
-    {
-      "id": "US-015",
-      "title": "Pen and granary placement scoring + build range limit",
-      "description": "As a developer, I need pen and granary structures to use placement scoring, and all structures to respect the settlement build range limit.",
-      "acceptanceCriteria": [
-        "Pen scoring: +2.0 adjacent to existing pens, +1.5 within 5 tiles of AnimalCenter, +1.0 between AgriculturalCenter and ResidentialCenter, -3.0 on farm tiles, -2.0 on shelter tiles",
-        "Granary scoring: +2.0 between AgriculturalCenter and ResidentialCenter, +1.5 within 5 tiles of ResidentialCenter, -2.0 on farm tiles",
-        "All structure placement enforces max 20 tiles from settlement center",
-        "No structure can be placed on a tile already occupied by another structure",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 15,
-      "passes": true,
-      "notes": "This completes the placement scoring system. After this, all structures (shelter, campfire, farm, pen, granary) use intelligent placement. The 'between X and Y' scoring can be approximated as: tile is within 5 tiles of the midpoint between X and Y centers."
-    },
-    {
-      "id": "US-016",
-      "title": "Biome-dependent perception radius",
-      "description": "As a developer, I need agent perception radius to vary by the biome of the agent's current tile, replacing the flat SimConfig.PerceptionRadius.",
-      "acceptanceCriteria": [
-        "Perception radius determined by agent's current tile biome: Plains=30, Desert=35, Forest=12, Mountain(ground)=20, Mountain(high)=40, Water edge=25",
-        "SimConfig.PerceptionRadius replaced with a GetPerceptionRadius(BiomeType) method or lookup",
-        "Animal perception/detection also scales with their current biome",
-        "All calls to perception radius in the codebase use the biome-dependent version",
-        "Typecheck passes",
-        "dotnet test --filter \"Category!=Slow\" passes"
-      ],
-      "priority": 16,
-      "passes": true,
-      "notes": "Mountain(high) vs Mountain(ground) may need an elevation concept or just use Mountain=20 for now with high elevation as future work. Water edge = agent is on a tile adjacent to water. The simplest implementation: check current tile biome, return the corresponding radius."
-    },
-    {
-      "id": "US-017",
-      "title": "Performance profiling and optimization for 122,500 tiles",
-      "description": "As a developer, I need the simulation to maintain 30+ FPS at 350x350 with current population levels, profiling and optimizing any bottlenecks.",
-      "acceptanceCriteria": [
-        "Simulation runs at 30+ FPS on 350x350 grid with 10+ agents",
-        "World rendering uses frustum culling (only render visible tiles)",
-        "Spatial indexing handles 122,500 tiles without full rebuilds",
-        "Perception queries don't scan all 122,500 tiles (use spatial index or bounded search)",
-        "Territory recalculation is not called every tick (only on structure change)",
-        "Memory usage reasonable (under 500MB for 350x350 world)",
-        "Typecheck passes"
-      ],
-      "priority": 17,
-      "passes": true,
-      "notes": "Frustum culling likely already exists from D26 — verify it works at the new scale. The biggest risk is perception scanning all tiles. Spatial index or grid-based neighbor lookup is essential. Profile before optimizing — measure, don't guess. The creator has noted 1 FPS at 200 pop with 4% CPU = architectural problem."
-    },
-    {
-      "id": "US-018",
-      "title": "Camera navigation improvements for larger world",
-      "description": "As a developer, I need camera improvements to make the larger 350x350 world navigable — quick-jump to settlement, zoom-to-fit, and smooth camera controls.",
-      "acceptanceCriteria": [
-        "Hotkey (Home or H) centers camera on settlement center with appropriate zoom",
-        "Hotkey (F) zooms to fit entire world in view",
-        "Camera pan speed scales with zoom level (faster pan when zoomed out)",
-        "Camera doesn't get lost — boundary clamping prevents scrolling into void",
-        "Mouse wheel zoom centers on cursor position (not screen center)",
-        "Typecheck passes"
-      ],
-      "priority": 18,
-      "passes": true,
-      "notes": "Some of these may already exist. Check RaylibRenderer.cs for camera handling. The key improvement is that at 350x350, the world is much bigger and it's easy to lose your settlement. Quick-jump and zoom-to-fit are essential navigation aids."
+      "passes": false,
+      "notes": "This is a validation story. Run the suite both ways and verify timing. If a test that should be Slow is not tagged, go back and tag it. If a test that should be fast is tagged Slow, remove the tag. The goal per spec: fast suite under 60s, full suite under 45min."
     }
   ]
 }
