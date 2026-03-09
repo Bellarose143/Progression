@@ -910,13 +910,32 @@ public static class UtilityScorer
             }
         }
 
-        // ── Priority 3: Granary (requires shelter on tile, not already built) ──
-        if (agent.Knowledge.Contains("granary") && buildTile.HasShelter && !buildTile.HasGranary)
+        // ── Priority 3: Granary (requires granary knowledge, settlement with shelter) ──
+        if (agent.Knowledge.Contains("granary"))
         {
             if (woodHeld >= SimConfig.GranaryWoodCost && stoneHeld >= SimConfig.GranaryStoneCost)
             {
-                results.Add(new ScoredAction(ActionType.Build, 0.25f,
-                    targetTile: (buildX, buildY), targetRecipeId: "granary"));
+                // US-015: Use placement scorer when agent has a settlement
+                if (agentSettlement != null && agentSettlement.ShelterQuality > ShelterTier.None)
+                {
+                    // Only build if settlement doesn't already have a granary
+                    bool hasGranary = agentSettlement.Structures.Any(s => s.Type == "granary");
+                    if (!hasGranary)
+                    {
+                        var scored = PlacementScorer.FindBestTile("granary", agentSettlement, world, agent.X, agent.Y);
+                        if (scored.HasValue)
+                        {
+                            results.Add(new ScoredAction(ActionType.Build, 0.25f,
+                                targetTile: scored.Value, targetRecipeId: "granary"));
+                        }
+                    }
+                }
+                else if (buildTile.HasShelter && !buildTile.HasGranary)
+                {
+                    // Fallback for agents without settlement
+                    results.Add(new ScoredAction(ActionType.Build, 0.25f,
+                        targetTile: (buildX, buildY), targetRecipeId: "granary"));
+                }
             }
         }
 
@@ -949,15 +968,33 @@ public static class UtilityScorer
             }
         }
 
-        // ── Priority 5: Animal Pen (requires animal_domestication, shelter) ──
-        if (agent.Knowledge.Contains("animal_domestication") && buildTile.HasShelter
-            && !buildTile.Structures.Contains("animal_pen"))
+        // ── Priority 5: Animal Pen (requires animal_domestication, settlement with shelter) ──
+        if (agent.Knowledge.Contains("animal_domestication"))
         {
             // Animal pen: 5 wood, 2 stone (D25d directive spec)
             if (woodHeld >= 5 && stoneHeld >= 2)
             {
-                results.Add(new ScoredAction(ActionType.Build, 0.20f,
-                    targetTile: (buildX, buildY), targetRecipeId: "animal_pen"));
+                // US-015: Use placement scorer when agent has a settlement
+                if (agentSettlement != null && agentSettlement.ShelterQuality > ShelterTier.None)
+                {
+                    // Only build if settlement doesn't already have a pen
+                    bool hasPen = agentSettlement.Structures.Any(s => s.Type == "animal_pen");
+                    if (!hasPen)
+                    {
+                        var scored = PlacementScorer.FindBestTile("animal_pen", agentSettlement, world, agent.X, agent.Y);
+                        if (scored.HasValue)
+                        {
+                            results.Add(new ScoredAction(ActionType.Build, 0.20f,
+                                targetTile: scored.Value, targetRecipeId: "animal_pen"));
+                        }
+                    }
+                }
+                else if (buildTile.HasShelter && !buildTile.Structures.Contains("animal_pen"))
+                {
+                    // Fallback for agents without settlement
+                    results.Add(new ScoredAction(ActionType.Build, 0.20f,
+                        targetTile: (buildX, buildY), targetRecipeId: "animal_pen"));
+                }
             }
         }
     }
@@ -1551,8 +1588,8 @@ public static class UtilityScorer
                     targetTile: (homeTile.X, homeTile.Y), targetRecipeId: "reinforced_shelter"));
             }
 
-            // Granary: knows it, has shelter, no granary yet
-            if (agent.Knowledge.Contains("granary") && homeTile.HasShelter && !homeTile.HasGranary)
+            // Granary: knows it, has settlement with shelter, no granary yet
+            if (agent.Knowledge.Contains("granary"))
             {
                 int woodHeld = agent.Inventory.GetValueOrDefault(ResourceType.Wood, 0)
                     + homeTile.HomeMaterialStorage.GetValueOrDefault(ResourceType.Wood, 0);
@@ -1560,8 +1597,29 @@ public static class UtilityScorer
                     + homeTile.HomeMaterialStorage.GetValueOrDefault(ResourceType.Stone, 0);
                 if (woodHeld >= SimConfig.GranaryWoodCost && stoneHeld >= SimConfig.GranaryStoneCost)
                 {
-                    results.Add(new ScoredAction(ActionType.Build, 0.25f,
-                        targetTile: (homeTile.X, homeTile.Y), targetRecipeId: "granary"));
+                    // US-015: Use placement scorer when agent has a settlement
+                    Settlement? agentSettlement = null;
+                    if (agent.SettlementId != null && settlements != null)
+                        agentSettlement = settlements.FirstOrDefault(s => s.Id == agent.SettlementId);
+
+                    if (agentSettlement != null && agentSettlement.ShelterQuality > ShelterTier.None)
+                    {
+                        bool hasGranary = agentSettlement.Structures.Any(s => s.Type == "granary");
+                        if (!hasGranary)
+                        {
+                            var scored = PlacementScorer.FindBestTile("granary", agentSettlement, world, agent.X, agent.Y);
+                            if (scored.HasValue)
+                            {
+                                results.Add(new ScoredAction(ActionType.Build, 0.25f,
+                                    targetTile: scored.Value, targetRecipeId: "granary"));
+                            }
+                        }
+                    }
+                    else if (homeTile.HasShelter && !homeTile.HasGranary)
+                    {
+                        results.Add(new ScoredAction(ActionType.Build, 0.25f,
+                            targetTile: (homeTile.X, homeTile.Y), targetRecipeId: "granary"));
+                    }
                 }
             }
         }

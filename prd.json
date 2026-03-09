@@ -259,7 +259,7 @@
         "dotnet test passes"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "This completes the placement scoring system. After this, all structures (shelter, campfire, farm, pen, granary) use intelligent placement. The 'between X and Y' scoring can be approximated as: tile is within 5 tiles of the midpoint between X and Y centers."
     },
     {

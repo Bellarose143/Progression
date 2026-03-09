@@ -41,6 +41,10 @@ public static class PlacementScorer
                 // Cannot place on tile that already has a structure of same type
                 if (tile.Structures.Contains(structureType)) continue;
 
+                // No structure can be placed on a tile already occupied by another structure
+                // (except shelter adjacency/upgrade and campfire which coexist with shelters)
+                if (structureType is "animal_pen" or "granary" or "farm" && HasAnyStructure(tile)) continue;
+
                 // Farm tiles must be farmable (Plains or cleared land)
                 if (structureType == "farm" && !tile.IsFarmable) continue;
 
@@ -52,6 +56,10 @@ public static class PlacementScorer
                         => ScoreCampfire(tile, settlement),
                     "farm"
                         => ScoreFarm(tile, settlement),
+                    "animal_pen"
+                        => ScorePen(tile, settlement),
+                    "granary"
+                        => ScoreGranary(tile, settlement),
                     _ => 0f,
                 };
 
@@ -270,6 +278,76 @@ public static class PlacementScorer
         // -5.0 on existing structure tiles (any structure that isn't a farm)
         if (HasAnyStructure(tile))
             score -= 5.0f;
+
+        return score;
+    }
+
+    /// <summary>
+    /// US-015: Pen scoring.
+    /// +2.0 adjacent to existing pens, +1.5 within 5 tiles of AnimalCenter,
+    /// +1.0 between AgriculturalCenter and ResidentialCenter, -3.0 on farm tiles,
+    /// -2.0 on shelter tiles.
+    /// </summary>
+    private static float ScorePen(Tile tile, Settlement settlement)
+    {
+        float score = 0f;
+
+        // +2.0 adjacent to existing pens
+        if (HasAdjacentStructureOfType(tile, settlement, t => t == "animal_pen"))
+            score += 2.0f;
+
+        // +1.5 within 5 tiles of AnimalCenter
+        var animalCenter = settlement.Zones.AnimalCenter;
+        int distToAnimal = Math.Abs(tile.X - animalCenter.X) + Math.Abs(tile.Y - animalCenter.Y);
+        if (distToAnimal <= 5)
+            score += 1.5f;
+
+        // +1.0 between AgriculturalCenter and ResidentialCenter (within 5 tiles of midpoint)
+        var agCenter = settlement.Zones.AgriculturalCenter;
+        var resCenter = settlement.Zones.ResidentialCenter;
+        int midX = (agCenter.X + resCenter.X) / 2;
+        int midY = (agCenter.Y + resCenter.Y) / 2;
+        int distToMid = Math.Abs(tile.X - midX) + Math.Abs(tile.Y - midY);
+        if (distToMid <= 5)
+            score += 1.0f;
+
+        // -3.0 on farm tiles
+        if (tile.HasFarm)
+            score -= 3.0f;
+
+        // -2.0 on shelter tiles
+        if (tile.HasShelter)
+            score -= 2.0f;
+
+        return score;
+    }
+
+    /// <summary>
+    /// US-015: Granary scoring.
+    /// +2.0 between AgriculturalCenter and ResidentialCenter,
+    /// +1.5 within 5 tiles of ResidentialCenter, -2.0 on farm tiles.
+    /// </summary>
+    private static float ScoreGranary(Tile tile, Settlement settlement)
+    {
+        float score = 0f;
+
+        // +2.0 between AgriculturalCenter and ResidentialCenter (within 5 tiles of midpoint)
+        var agCenter = settlement.Zones.AgriculturalCenter;
+        var resCenter = settlement.Zones.ResidentialCenter;
+        int midX = (agCenter.X + resCenter.X) / 2;
+        int midY = (agCenter.Y + resCenter.Y) / 2;
+        int distToMid = Math.Abs(tile.X - midX) + Math.Abs(tile.Y - midY);
+        if (distToMid <= 5)
+            score += 2.0f;
+
+        // +1.5 within 5 tiles of ResidentialCenter
+        int distToRes = Math.Abs(tile.X - resCenter.X) + Math.Abs(tile.Y - resCenter.Y);
+        if (distToRes <= 5)
+            score += 1.5f;
+
+        // -2.0 on farm tiles
+        if (tile.HasFarm)
+            score -= 2.0f;
 
         return score;
     }

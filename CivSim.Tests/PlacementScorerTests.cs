@@ -439,6 +439,233 @@ public class PlacementScorerTests
             $"Third farm at ({result.Value.X},{result.Value.Y}) should be adjacent to existing farms at ({fx},{fy}) or ({f2x},{f2y})");
     }
 
+    // ── US-015: Pen and Granary placement tests ─────────────────────
+
+    /// <summary>
+    /// Pen placement should prefer tiles adjacent to existing pens (+2.0 adjacency bonus).
+    /// </summary>
+    [Fact]
+    public void Pen_PrefersAdjacentToExistingPen()
+    {
+        var world = new World(32, 32, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (15, 15)
+        };
+        settlement.Structures.Add((15, 15, "lean_to"));
+        // Place an existing pen a few tiles away
+        settlement.Structures.Add((18, 15, "animal_pen"));
+        world.GetTile(18, 15).Structures.Add("animal_pen");
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("animal_pen", settlement, world, 15, 15);
+
+        Assert.NotNull(result);
+        // Should be adjacent to the existing pen at (18,15)
+        int dx = Math.Abs(result.Value.X - 18);
+        int dy = Math.Abs(result.Value.Y - 15);
+        Assert.True(dx <= 1 && dy <= 1,
+            $"Pen at ({result.Value.X},{result.Value.Y}) should be adjacent to existing pen at (18,15)");
+    }
+
+    /// <summary>
+    /// Pen should avoid farm tiles (-3.0 penalty).
+    /// </summary>
+    [Fact]
+    public void Pen_AvoidsFarmTiles()
+    {
+        var world = new World(32, 32, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (15, 15)
+        };
+        settlement.Structures.Add((15, 15, "lean_to"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("animal_pen", settlement, world, 15, 15);
+
+        Assert.NotNull(result);
+        var placedTile = world.GetTile(result.Value.X, result.Value.Y);
+        Assert.False(placedTile.HasFarm,
+            $"Pen should not be placed on farm tile at ({result.Value.X},{result.Value.Y})");
+    }
+
+    /// <summary>
+    /// Pen should avoid shelter tiles (-2.0 penalty).
+    /// </summary>
+    [Fact]
+    public void Pen_AvoidsShelterTiles()
+    {
+        var world = new World(32, 32, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (15, 15)
+        };
+        settlement.Structures.Add((15, 15, "lean_to"));
+        world.GetTile(15, 15).Structures.Add("lean_to");
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("animal_pen", settlement, world, 15, 15);
+
+        Assert.NotNull(result);
+        // Should not be on the shelter tile
+        var placedTile = world.GetTile(result.Value.X, result.Value.Y);
+        Assert.False(placedTile.HasShelter,
+            $"Pen should not be placed on shelter tile at ({result.Value.X},{result.Value.Y})");
+    }
+
+    /// <summary>
+    /// Pen should not be placed on a tile that already has a structure.
+    /// </summary>
+    [Fact]
+    public void Pen_NotPlacedOnOccupiedTile()
+    {
+        var world = new World(32, 32, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (15, 15)
+        };
+        settlement.Structures.Add((15, 15, "lean_to"));
+        world.GetTile(15, 15).Structures.Add("lean_to");
+        // Place a granary adjacent
+        settlement.Structures.Add((16, 15, "granary"));
+        world.GetTile(16, 15).Structures.Add("granary");
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("animal_pen", settlement, world, 15, 15);
+
+        Assert.NotNull(result);
+        // Should not be on the granary tile or shelter tile
+        Assert.False(result.Value.X == 16 && result.Value.Y == 15,
+            "Pen should not be placed on a tile with an existing granary");
+        Assert.False(result.Value.X == 15 && result.Value.Y == 15,
+            "Pen should not be placed on a tile with an existing shelter");
+    }
+
+    /// <summary>
+    /// Granary should prefer tiles between agricultural and residential centers.
+    /// </summary>
+    [Fact]
+    public void Granary_PrefersBetweenAgAndResCenter()
+    {
+        var world = new World(48, 48, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (24, 24)
+        };
+        settlement.Structures.Add((24, 24, "lean_to"));
+        // Place farms 10 tiles east to establish agricultural center
+        for (int i = 0; i < 3; i++)
+        {
+            int fx = 34 + i, fy = 24;
+            if (world.IsInBounds(fx, fy))
+            {
+                world.GetTile(fx, fy).Structures.Add("farm");
+                settlement.Structures.Add((fx, fy, "farm"));
+            }
+        }
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("granary", settlement, world, 24, 24);
+
+        Assert.NotNull(result);
+        // Midpoint between residential (24,24) and agricultural (~35,24) is ~(29,24)
+        // Granary should be near that midpoint area (within 5 of residential also gives bonus)
+        int distToRes = Math.Abs(result.Value.X - 24) + Math.Abs(result.Value.Y - 24);
+        Assert.True(distToRes <= 8,
+            $"Granary at ({result.Value.X},{result.Value.Y}), dist={distToRes} from residential — expected near midpoint area");
+    }
+
+    /// <summary>
+    /// Granary should avoid farm tiles (-2.0 penalty).
+    /// </summary>
+    [Fact]
+    public void Granary_AvoidsFarmTiles()
+    {
+        var world = new World(32, 32, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (15, 15)
+        };
+        settlement.Structures.Add((15, 15, "lean_to"));
+        // Add farms around center
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                var tile = world.GetTile(15 + dx, 15 + dy);
+                tile.Structures.Add("farm");
+                settlement.Structures.Add((15 + dx, 15 + dy, "farm"));
+            }
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("granary", settlement, world, 15, 15);
+
+        Assert.NotNull(result);
+        var placedTile = world.GetTile(result.Value.X, result.Value.Y);
+        Assert.False(placedTile.HasFarm,
+            $"Granary should not be placed on farm tile at ({result.Value.X},{result.Value.Y})");
+    }
+
+    /// <summary>
+    /// Granary should not be placed on a tile that already has a structure.
+    /// </summary>
+    [Fact]
+    public void Granary_NotPlacedOnOccupiedTile()
+    {
+        var world = new World(32, 32, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (15, 15)
+        };
+        settlement.Structures.Add((15, 15, "lean_to"));
+        world.GetTile(15, 15).Structures.Add("lean_to");
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("granary", settlement, world, 15, 15);
+
+        Assert.NotNull(result);
+        // Should not be on the shelter tile
+        Assert.False(result.Value.X == 15 && result.Value.Y == 15,
+            "Granary should not be placed on a tile with an existing shelter");
+    }
+
+    /// <summary>
+    /// All structure placement must be within 20 tiles (StructureBuildRange) of settlement center.
+    /// </summary>
+    [Fact]
+    public void AllStructures_WithinBuildRange()
+    {
+        var world = new World(64, 64, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (32, 32)
+        };
+        settlement.Structures.Add((32, 32, "lean_to"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        // Test all structure types
+        foreach (var type in new[] { "lean_to", "campfire", "animal_pen", "granary" })
+        {
+            var result = PlacementScorer.FindBestTile(type, settlement, world, 32, 32);
+            if (result.HasValue)
+            {
+                int dx = Math.Abs(result.Value.X - 32);
+                int dy = Math.Abs(result.Value.Y - 32);
+                Assert.True(dx <= SimConfig.StructureBuildRange && dy <= SimConfig.StructureBuildRange,
+                    $"{type} placed at ({result.Value.X},{result.Value.Y}), outside build range of {SimConfig.StructureBuildRange} from center (32,32)");
+            }
+        }
+    }
+
     /// <summary>
     /// Helper: finds a non-Water, farmable tile approximately 'targetDist' tiles from (cx,cy).
     /// </summary>
