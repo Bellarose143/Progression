@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// return path every 5 tiles of Chebyshev distance from home. If no path exists,
 /// they should immediately abort explore and head back.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ExploreReturnPathTests
 {
     [Fact]

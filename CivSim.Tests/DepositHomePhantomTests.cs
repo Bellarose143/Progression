@@ -9,6 +9,7 @@ namespace CivSim.Tests;
 /// (storage full, inventory empty, or below keep-for-self thresholds).
 /// All positions are OFFSETS from the simulation spawn center.
 /// </summary>
+[Trait("Category", "Integration")]
 public partial class DepositHomePhantomTests
 {
     [Fact]
@@ -133,6 +134,7 @@ public partial class DepositHomePhantomTests
 }
 
 // Gate 1 Check 4: Verify phantom DepositHome eliminated in seed 16001
+[Trait("Category", "Integration")]
 public partial class DepositHomePhantomTests
 {
     [Fact]

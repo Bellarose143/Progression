@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Post-Playtest Fix 1: Stuck-and-Starving Loop Prevention.
 /// Agents that fail to move should survive locally rather than starving.
 /// </summary>
+[Trait("Category", "Integration")]
 public class StuckAndStarvingTests
 {
     [Fact]

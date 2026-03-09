@@ -6,6 +6,7 @@ namespace CivSim.Tests;
 /// <summary>
 /// D25a: Tests for Animal entity, Carcass, and AnimalAI state machine.
 /// </summary>
+[Trait("Category", "Integration")]
 public class AnimalEntityTests : IDisposable
 {
     public AnimalEntityTests()

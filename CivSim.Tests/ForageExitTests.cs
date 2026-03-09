@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Tests for Forage mode exit conditions: return threshold, inventory full,
 /// hunger low, duration safety valve.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ForageExitTests
 {
     /// <summary>

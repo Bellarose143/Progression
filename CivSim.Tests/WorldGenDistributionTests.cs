@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// D23 World Gen Resource Distribution tests.
 /// Validates berry patch clustering, animal clustering, cross-biome wood, mountain variation, and determinism.
 /// </summary>
+[Trait("Category", "Integration")]
 public class WorldGenDistributionTests
 {
     private const int TestSeed = 16001;

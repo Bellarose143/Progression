@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// All positions are OFFSETS from the simulation spawn center.
 /// Rules: RULE-D1, RULE-D2, RULE-D3, RULE-D4
 /// </summary>
+[Trait("Category", "Integration")]
 public class DecisionQualityTests
 {
     [Fact]

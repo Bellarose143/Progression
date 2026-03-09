@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// Youth agents should gather (multi-tick), deposit, eat, rest at night —
 /// not just follow parent or idle endlessly.
 /// </summary>
+[Trait("Category", "Integration")]
 public class YouthActionTests
 {
     private TestSim CreateYouthScenario(int seed = 42)

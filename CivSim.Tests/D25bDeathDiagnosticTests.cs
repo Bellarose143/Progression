@@ -5,6 +5,7 @@ using Xunit.Abstractions;
 namespace CivSim.Tests;
 
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class D25bDeathDiagnosticTests
 {
     private readonly ITestOutputHelper _output;

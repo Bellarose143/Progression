@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// Agents should rest once per night with duration covering the remaining night,
 /// waking at dawn ready to work.
 /// </summary>
+[Trait("Category", "Integration")]
 public class SingleNightRestTests
 {
     [Fact]

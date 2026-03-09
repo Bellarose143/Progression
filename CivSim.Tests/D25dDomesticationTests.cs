@@ -10,6 +10,7 @@ namespace CivSim.Tests;
 // Gate 1: Knowledge Gate — actions gated behind animal_domestication
 // ═══════════════════════════════════════════════════════════════════
 
+[Trait("Category", "Integration")]
 public class D25dKnowledgeGateTests
 {
     private static void ResetIds()
@@ -119,6 +120,7 @@ public class D25dKnowledgeGateTests
 // Gate 2: Tame Action
 // ═══════════════════════════════════════════════════════════════════
 
+[Trait("Category", "Integration")]
 public class D25dTameActionTests
 {
     private static void ResetIds()
@@ -535,6 +537,7 @@ public class D25dPenOperationsTests
 // ═══════════════════════════════════════════════════════════════════
 
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class D25dBreedingTests
 {
     private static void ResetIds()
@@ -683,6 +686,7 @@ public class D25dBreedingTests
 // Gate 6: Slaughter
 // ═══════════════════════════════════════════════════════════════════
 
+[Trait("Category", "Integration")]
 public class D25dSlaughterTests
 {
     private static void ResetIds()
@@ -790,6 +794,7 @@ public class D25dSlaughterTests
 // Gate 7: Wolf Pup -> Dog
 // ═══════════════════════════════════════════════════════════════════
 
+[Trait("Category", "Integration")]
 public class D25dWolfPupDogTests
 {
     private static void ResetIds()
@@ -998,6 +1003,7 @@ public class D25dWolfPupDogTests
 // ═══════════════════════════════════════════════════════════════════
 
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class D25dPenFeedingIntegrationTests
 {
     private static void ResetIds()

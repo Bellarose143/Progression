@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// D18.2: Kill-Box Safety Net Tests.
 /// Validates the invariant: an agent with food must NEVER starve.
 /// </summary>
+[Trait("Category", "Integration")]
 public class KillBoxSafetyNetTests
 {
     [Fact]

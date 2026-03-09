@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// The UI renders agent.Inventory.Where(item => item.Value > 0),
 /// so zero-count items should never appear in the displayed inventory.
 /// </summary>
+[Trait("Category", "Integration")]
 public class InventoryDisplayTests
 {
     [Fact]

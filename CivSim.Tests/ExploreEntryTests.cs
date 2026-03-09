@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// These would have caught the HomePull drift bug where agents immediately
 /// entered Explore mode because entry conditions were too permissive.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ExploreEntryTests
 {
     /// <summary>

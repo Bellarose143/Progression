@@ -9,6 +9,7 @@ namespace CivSim.Tests;
 /// All positions are OFFSETS from the simulation spawn center.
 /// Rules: RULE-R1, RULE-R2, RULE-R3
 /// </summary>
+[Trait("Category", "Integration")]
 public class ReproductionTests
 {
     [Fact]

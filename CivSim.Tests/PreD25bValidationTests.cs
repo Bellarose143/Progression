@@ -5,13 +5,13 @@ using Xunit.Abstractions;
 namespace CivSim.Tests;
 
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class PreD25bValidationTests
 {
     private readonly ITestOutputHelper _output;
     public PreD25bValidationTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
-    [Trait("Category", "Integration")]
     [Trait("Category", "Slow")]
     public void Seed16001_ExploreDirectionStreaks_NoneExceed3()
     {
@@ -63,7 +63,6 @@ public class PreD25bValidationTests
     }
 
     [Fact]
-    [Trait("Category", "Integration")]
     [Trait("Category", "Slow")]
     public void Seed16001_NoAnimalsStuckAtEdge100Ticks()
     {
@@ -109,7 +108,6 @@ public class PreD25bValidationTests
     }
 
     [Fact]
-    [Trait("Category", "Integration")]
     [Trait("Category", "Slow")]
     public void Seed16001_ReportLilyIdlePercent()
     {

@@ -4,6 +4,7 @@ using CivSim.Core;
 namespace CivSim.Tests;
 
 [Collection("Sequential")]
+[Trait("Category", "Integration")]
 public class D25cTrappingTests
 {
     [Fact]

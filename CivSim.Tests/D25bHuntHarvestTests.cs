@@ -9,6 +9,7 @@ namespace CivSim.Tests;
 /// D25b: Tests for Hunt/Harvest mechanics, animal perception, memory filtering,
 /// carcass decay, and the Meat resource type.
 /// </summary>
+[Trait("Category", "Integration")]
 public class D25bHuntHarvestTests : IDisposable
 {
     public D25bHuntHarvestTests()

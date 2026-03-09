@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// Verifies that tile blacklists persist across safety-distance goal resets,
 /// and that safety-distance backs off when MoveFailCount is high.
 /// </summary>
+[Trait("Category", "Integration")]
 public class PathfindingDeadlockTests
 {
     [Fact]

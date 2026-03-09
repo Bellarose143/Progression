@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// These would have caught the Move flood bug (goals persisting across mode changes)
 /// and the Home-mode foraging bug (agents gathering remotely without entering Forage).
 /// </summary>
+[Trait("Category", "Integration")]
 public class ModeTransitionTests
 {
     /// <summary>

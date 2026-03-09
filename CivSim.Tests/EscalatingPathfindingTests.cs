@@ -15,6 +15,7 @@ namespace CivSim.Tests;
 ///   Stage 3 (11-20 failures): Greedy stepping
 ///   Stage 4 (21+ failures):   Emergency (teleport home for ReturnHome, abandon for others)
 /// </summary>
+[Trait("Category", "Integration")]
 public class EscalatingPathfindingTests
 {
     /// <summary>

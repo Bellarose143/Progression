@@ -9,13 +9,13 @@ namespace CivSim.Tests;
 /// These tests capture pre-D25b state for comparison after implementation.
 /// </summary>
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class D25bBaselineTests
 {
     private readonly ITestOutputHelper _output;
     public D25bBaselineTests(ITestOutputHelper output) => _output = output;
 
     [Theory]
-    [Trait("Category", "Integration")]
     [Trait("Category", "Slow")]
     [InlineData(42)]
     [InlineData(1337)]

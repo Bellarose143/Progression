@@ -6,6 +6,7 @@ namespace CivSim.Tests;
 /// <summary>
 /// D22 Gate 1: TryAddToInventory centralized invariant tests.
 /// </summary>
+[Trait("Category", "Integration")]
 public class TryAddToInventoryTests
 {
     private Agent CreateAgent(float hunger = 90f)

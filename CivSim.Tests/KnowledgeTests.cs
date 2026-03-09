@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// All positions are OFFSETS from the simulation spawn center.
 /// Rules: RULE-K1, RULE-K3
 /// </summary>
+[Trait("Category", "Integration")]
 public class KnowledgeTests
 {
     [Fact]

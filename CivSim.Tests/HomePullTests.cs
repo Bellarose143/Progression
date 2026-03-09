@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// All positions are OFFSETS from the simulation spawn center.
 /// Rules: RULE-H1, RULE-H2, RULE-H3
 /// </summary>
+[Trait("Category", "Integration")]
 public class HomePullTests
 {
     [Fact]

@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Fix 2: DepositHome Spam Guards — threshold, cooldown, and committed-goal checks.
 /// All positions are OFFSETS from the simulation spawn center.
 /// </summary>
+[Trait("Category", "Integration")]
 public class DepositHomeTests
 {
     /// <summary>
