@@ -178,7 +178,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "This is renderer-only. Settlement territory data comes from Settlement.Territory. If multiple settlements exist (future), use different colors per settlement. Keep it simple — semi-transparent rectangles over territory tiles, with slightly darker border on edges."
     },
     {

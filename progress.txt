@@ -195,3 +195,27 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - CheckAggroTrigger is defined but never called in the codebase — combat is fully agent-driven (CheckInvoluntaryCombat in AgentAI). The method exists for potential future use.
   - Home deterrent kept as fallback for agents/animals near homes without formal settlement territory yet
 ---
+
+## 2026-03-09 - US-010
+- Implemented togglable territory visual overlay in the renderer
+- Changes to RaylibRenderer.cs:
+  - Added ShowTerritory property (default false), toggled by V key
+  - Added RenderTerritoryOverlay() method — renders between worldRenderer and animalRenderer (below agents, above terrain)
+  - Semi-transparent fill per settlement with distinct colors (6-color palette, cycles for multiple settlements)
+  - Territory boundary edges drawn where territory meets non-territory (darker border lines)
+  - Frustum culling applied — only visible territory tiles rendered
+  - LOD respected — overlay hidden below 0.15x zoom to avoid clutter
+  - Render method accepts optional List<Settlement> parameter (backward compatible)
+- Changes to Program.cs:
+  - Passes simulation.Settlements to renderer.Render()
+- Changes to UIRenderer.cs:
+  - Controls legend updated: "K: Discoveries  V: Territory" line added, controls box height increased
+- Build: 0 errors
+- Tests: 335/335 pass (0 failures)
+- Files changed: RaylibRenderer.cs, Program.cs, UIRenderer.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - T key is taken by TechTree toggle — used V for territory instead
+  - Territory overlay is renderer-only (no Core changes), so no risk of behavioral cascade
+  - The Render method signature uses optional parameter to maintain backward compatibility with any other callers
+  - Frustum culling pattern: GetScreenToWorld2D for bounds, Math.Floor for negative coords, +/- 1 tile margin
+---
