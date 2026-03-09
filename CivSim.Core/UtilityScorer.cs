@@ -59,7 +59,7 @@ public static class UtilityScorer
         ScoreGatherResource(agent, world, currentTile, currentTick, results, knowledgeSystem, settlements);
         ScoreTendFarm(agent, world, currentTile, currentTick, results);
         // GDD v1.8: Teach removed — knowledge propagation is communal within settlements
-        ScoreBuild(agent, world, currentTile, results);
+        ScoreBuild(agent, world, currentTile, results, settlements);
         ScoreSocialize(agent, world, currentTick, results);
         ScoreReproduce(agent, world, currentTile, results, allAgents, settlements);
         ScoreExperiment(agent, world, currentTick, random, results, knowledgeSystem, settlements, trace);
@@ -185,7 +185,7 @@ public static class UtilityScorer
 
         // ── Score Home-appropriate actions ────────────────────────────
         ScoreTendFarm(agent, world, currentTile, currentTick, results);
-        ScoreBuild(agent, world, currentTile, results);
+        ScoreBuild(agent, world, currentTile, results, settlements);
         ScoreSocialize(agent, world, currentTick, results);
         ScoreReproduce(agent, world, currentTile, results, allAgents, settlements);
         ScoreExperiment(agent, world, currentTick, random, results, knowledgeSystem, settlements, trace);
@@ -801,7 +801,8 @@ public static class UtilityScorer
     /// Scans all known structure recipes and scores the most valuable buildable option.
     /// Priority: emergency shelter > shelter upgrade > granary > utility structures.
     /// </summary>
-    private static void ScoreBuild(Agent agent, World world, Tile currentTile, List<ScoredAction> results)
+    private static void ScoreBuild(Agent agent, World world, Tile currentTile, List<ScoredAction> results,
+        List<Settlement>? settlements = null)
     {
         int woodHeld = agent.Inventory.GetValueOrDefault(ResourceType.Wood, 0);
         int stoneHeld = agent.Inventory.GetValueOrDefault(ResourceType.Stone, 0);
@@ -811,8 +812,13 @@ public static class UtilityScorer
         int buildY = agent.HomeTile.HasValue ? agent.HomeTile.Value.Y : currentTile.Y;
         var buildTile = world.GetTile(buildX, buildY);
 
+        // US-013: Resolve agent's settlement for placement scoring
+        Settlement? agentSettlement = null;
+        if (agent.SettlementId != null && settlements != null)
+            agentSettlement = settlements.FirstOrDefault(s => s.Id == agent.SettlementId);
+
         // ── Priority 1: Emergency shelter when agent is exposed ──
-        if (agent.Knowledge.Contains("lean_to") && !buildTile.HasShelter)
+        if (agent.Knowledge.Contains("lean_to"))
         {
             bool alreadySheltered = agent.HomeTile.HasValue
                 && world.IsInBounds(agent.HomeTile.Value.X, agent.HomeTile.Value.Y)
@@ -820,37 +826,54 @@ public static class UtilityScorer
 
             if (!alreadySheltered)
             {
-                bool shelterNearby = false;
-                int sRadius = SimConfig.ShelterProximityRadius;
-                for (int sdx = -sRadius; sdx <= sRadius && !shelterNearby; sdx++)
-                    for (int sdy = -sRadius; sdy <= sRadius && !shelterNearby; sdy++)
-                    {
-                        int sx = buildX + sdx, sy = buildY + sdy;
-                        if (world.IsInBounds(sx, sy) && world.GetTile(sx, sy).HasShelter)
-                            shelterNearby = true;
-                    }
-
-                float needsBuilding = shelterNearby ? 0.3f : 1.0f;
-                float exposureMultiplier = (agent.IsExposed && !shelterNearby) ? 3.0f : 1.0f;
-
-                if (woodHeld >= SimConfig.ShelterWoodCost && stoneHeld >= SimConfig.ShelterStoneCost)
+                // US-013: Use placement scorer when agent has a settlement
+                int shelterX = buildX, shelterY = buildY;
+                if (agentSettlement != null)
                 {
-                    float score = 0.5f * needsBuilding * exposureMultiplier;
+                    var scored = PlacementScorer.FindBestTile("lean_to", agentSettlement, world, agent.X, agent.Y);
+                    if (scored.HasValue)
+                    {
+                        shelterX = scored.Value.X;
+                        shelterY = scored.Value.Y;
+                    }
+                }
+                var shelterTile = world.GetTile(shelterX, shelterY);
 
-                    // Directive #6 Fix 2: Hardcoded override — exposed agent with shelter
-                    // knowledge and materials scores minimum 0.70 for Build.
-                    // This beats everything except Urgent survival (90.0) and night rest (75.0).
-                    // Being homeless with the ability to not be is a survival imperative.
-                    if (agent.IsExposed)
-                        score = Math.Max(score, 0.70f);
+                if (!shelterTile.HasShelter)
+                {
+                    bool shelterNearby = false;
+                    int sRadius = SimConfig.ShelterProximityRadius;
+                    for (int sdx = -sRadius; sdx <= sRadius && !shelterNearby; sdx++)
+                        for (int sdy = -sRadius; sdy <= sRadius && !shelterNearby; sdy++)
+                        {
+                            int sx = shelterX + sdx, sy = shelterY + sdy;
+                            if (world.IsInBounds(sx, sy) && world.GetTile(sx, sy).HasShelter)
+                                shelterNearby = true;
+                        }
 
-                    results.Add(new ScoredAction(ActionType.Build, score,
-                        targetTile: (buildX, buildY), targetRecipeId: "lean_to"));
+                    float needsBuilding = shelterNearby ? 0.3f : 1.0f;
+                    float exposureMultiplier = (agent.IsExposed && !shelterNearby) ? 3.0f : 1.0f;
+
+                    if (woodHeld >= SimConfig.ShelterWoodCost && stoneHeld >= SimConfig.ShelterStoneCost)
+                    {
+                        float score = 0.5f * needsBuilding * exposureMultiplier;
+
+                        // Directive #6 Fix 2: Hardcoded override — exposed agent with shelter
+                        // knowledge and materials scores minimum 0.70 for Build.
+                        // This beats everything except Urgent survival (90.0) and night rest (75.0).
+                        // Being homeless with the ability to not be is a survival imperative.
+                        if (agent.IsExposed)
+                            score = Math.Max(score, 0.70f);
+
+                        results.Add(new ScoredAction(ActionType.Build, score,
+                            targetTile: (shelterX, shelterY), targetRecipeId: "lean_to"));
+                    }
                 }
             }
         }
 
         // ── Priority 2: Shelter upgrade (lean_to → improved_shelter) ──
+        // Upgrade happens in-place on existing shelter tile
         if (agent.Knowledge.Contains("reinforced_shelter") && buildTile.HasShelter
             && !buildTile.Structures.Contains("improved_shelter"))
         {
@@ -872,15 +895,32 @@ public static class UtilityScorer
             }
         }
 
-        // ── Priority 4: Campfire (requires fire knowledge, shelter on tile) ──
-        if (agent.Knowledge.Contains("fire") && buildTile.HasShelter
-            && !buildTile.Structures.Contains("campfire"))
+        // ── Priority 4: Campfire (requires fire knowledge, settlement with shelter) ──
+        if (agent.Knowledge.Contains("fire"))
         {
-            // Campfire: 2 wood, 1 stone
-            if (woodHeld >= 2 && stoneHeld >= 1)
+            // US-013: Use placement scorer for campfire when agent has a settlement
+            if (agentSettlement != null && agentSettlement.ShelterQuality > ShelterTier.None)
             {
-                results.Add(new ScoredAction(ActionType.Build, 0.20f,
-                    targetTile: (buildX, buildY), targetRecipeId: "campfire"));
+                // Check if settlement already has a campfire
+                bool hasCampfire = agentSettlement.Structures.Any(s => s.Type == "campfire" || s.Type == "hearth");
+                if (!hasCampfire && woodHeld >= 2 && stoneHeld >= 1)
+                {
+                    var scored = PlacementScorer.FindBestTile("campfire", agentSettlement, world, agent.X, agent.Y);
+                    if (scored.HasValue)
+                    {
+                        results.Add(new ScoredAction(ActionType.Build, 0.20f,
+                            targetTile: scored.Value, targetRecipeId: "campfire"));
+                    }
+                }
+            }
+            else if (buildTile.HasShelter && !buildTile.Structures.Contains("campfire"))
+            {
+                // Fallback for agents without settlement: build on shelter tile
+                if (woodHeld >= 2 && stoneHeld >= 1)
+                {
+                    results.Add(new ScoredAction(ActionType.Build, 0.20f,
+                        targetTile: (buildX, buildY), targetRecipeId: "campfire"));
+                }
             }
         }
 
