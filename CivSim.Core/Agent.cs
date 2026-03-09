@@ -1353,17 +1353,29 @@ public class Agent
     /// GDD v1.8 Section 3: Additional hard gate — both agents must have shelter within 5 tiles.
     /// "No breeding in the wild." Uses KnownStructures (permanent memory) for efficiency.
     /// </summary>
-    public bool CanReproduceWithPartner(Agent partner, World world)
+    public bool CanReproduceWithPartner(Agent partner, World world, List<Settlement>? settlements = null)
     {
         if (IsMale == partner.IsMale) return false;
         if (!CanReproduce() || !partner.CanReproduce()) return false;
-        return HasShelterNearby(world, SimConfig.ReproductionShelterProximity)
-            && partner.HasShelterNearby(world, SimConfig.ReproductionShelterProximity);
+        return HasShelterAccess(world, SimConfig.ReproductionShelterProximity, settlements)
+            && partner.HasShelterAccess(world, SimConfig.ReproductionShelterProximity, settlements);
     }
 
-    /// <summary>Section 3: Checks if any known shelter is within the given radius of this agent.</summary>
-    private bool HasShelterNearby(World world, int radius)
+    /// <summary>
+    /// US-008: Checks shelter access. If agent has a settlement with shelter quality,
+    /// returns true. Falls back to tile-based proximity check for agents without a settlement.
+    /// </summary>
+    private bool HasShelterAccess(World world, int radius, List<Settlement>? settlements)
     {
+        // Settlement-based check: if agent belongs to a settlement with any shelter, they have access
+        if (SettlementId.HasValue && settlements != null)
+        {
+            var settlement = settlements.FirstOrDefault(s => s.Id == SettlementId.Value);
+            if (settlement != null && settlement.ShelterQuality > ShelterTier.None)
+                return true;
+        }
+
+        // Fallback for agents without a settlement: tile-based proximity check
         // Check permanent landmark memory first (efficient, no world lookups)
         foreach (var ks in KnownStructures)
         {
@@ -1387,7 +1399,7 @@ public class Agent
     /// GDD v1.8 Section 3: Computes the composite stability score (0.0-1.0) for reproduction.
     /// 0.4 × FoodSecurity + 0.2 × ShelterQuality + 0.2 × Dependents + 0.2 × HealthTrend
     /// </summary>
-    public float ComputeStabilityScore(World world, List<Agent> allAgents)
+    public float ComputeStabilityScore(World world, List<Agent> allAgents, List<Settlement>? settlements = null)
     {
         // 1. Food security (0.4 weight) — trend + current reserves
         float foodTrend = GetFoodTrend(); // 0 (depleting) to 1 (growing)
@@ -1402,10 +1414,18 @@ public class Agent
         float reserveBonus = Math.Min(0.3f, currentFood / 30f);
         float foodSecurity = Math.Clamp(foodTrend + reserveBonus, 0f, 1f);
 
-        // 2. Shelter quality (0.2 weight)
+        // 2. Shelter quality (0.2 weight) — US-008: use Settlement.ShelterQuality
         float shelterQuality = 0f;
-        if (HomeTile.HasValue && world.IsInBounds(HomeTile.Value.X, HomeTile.Value.Y))
+        var settlement = SettlementId.HasValue
+            ? settlements?.FirstOrDefault(s => s.Id == SettlementId.Value)
+            : null;
+        if (settlement != null)
         {
+            shelterQuality = settlement.GetShelterQualityFloat();
+        }
+        else if (HomeTile.HasValue && world.IsInBounds(HomeTile.Value.X, HomeTile.Value.Y))
+        {
+            // Fallback for agents without a settlement: check HomeTile directly
             var homeTile = world.GetTile(HomeTile.Value.X, HomeTile.Value.Y);
             if (homeTile.Structures.Contains("improved_shelter"))
                 shelterQuality = SimConfig.ShelterQualityImproved;

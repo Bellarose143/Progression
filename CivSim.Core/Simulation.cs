@@ -263,18 +263,44 @@ public class Simulation
         World.MovesThisTick = 0;
 
         // Phase 0 (GDD v1.7): Calculate exposure for each alive agent
+        // US-008: Settlement members check proximity to settlement shelter structures;
+        // agents without a settlement fall back to tile scan.
         foreach (var agent in Agents.Where(a => a.IsAlive))
         {
             bool sheltered = false;
             int radius = SimConfig.ExposureShelterRadius;
-            for (int dx = -radius; dx <= radius && !sheltered; dx++)
+
+            // Settlement-based check: if agent is in a settlement with shelter,
+            // check proximity to settlement shelter structures (more efficient than full tile scan)
+            if (agent.SettlementId.HasValue)
             {
-                for (int dy = -radius; dy <= radius && !sheltered; dy++)
+                var settlement = Settlements.FirstOrDefault(s => s.Id == agent.SettlementId.Value);
+                if (settlement != null && settlement.ShelterQuality > ShelterTier.None)
                 {
-                    int tx = agent.X + dx;
-                    int ty = agent.Y + dy;
-                    if (World.IsInBounds(tx, ty) && World.GetTile(tx, ty).HasShelter)
-                        sheltered = true;
+                    foreach (var (sx, sy, sType) in settlement.Structures)
+                    {
+                        if (Settlement.StructureToShelterTier(sType) != ShelterTier.None
+                            && Math.Max(Math.Abs(agent.X - sx), Math.Abs(agent.Y - sy)) <= radius)
+                        {
+                            sheltered = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Fallback: tile-based proximity check for agents without a settlement
+            if (!sheltered)
+            {
+                for (int dx = -radius; dx <= radius && !sheltered; dx++)
+                {
+                    for (int dy = -radius; dy <= radius && !sheltered; dy++)
+                    {
+                        int tx = agent.X + dx;
+                        int ty = agent.Y + dy;
+                        if (World.IsInBounds(tx, ty) && World.GetTile(tx, ty).HasShelter)
+                            sheltered = true;
+                    }
                 }
             }
             agent.IsExposed = !sheltered;

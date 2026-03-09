@@ -5600,10 +5600,14 @@ public class AgentAI
         var structureId = agent.ActionTargetRecipe;
 
         // Complete the structure
+        // US-008: Shelter on same tile replaces old shelter in tile structures
+        bool isShelter = structureId == "lean_to" || structureId == "shelter" || structureId == "improved_shelter";
+        if (isShelter)
+        {
+            tile.Structures.RemoveAll(s => s == "lean_to" || s == "shelter" || s == "improved_shelter");
+        }
         tile.Structures.Add(structureId);
         tile.BuildProgress.Remove(structureId);
-
-        bool isShelter = structureId == "lean_to" || structureId == "shelter" || structureId == "improved_shelter";
 
         // GDD v1.7.1: Set HomeTile when building a shelter (first shelter or closer to current pos)
         if (isShelter)
@@ -5629,6 +5633,7 @@ public class AgentAI
                 };
                 settlement.Members.Add(agent.Id);
                 settlement.Structures.Add((tx, ty, structureId));
+                settlement.RecalculateShelterQuality();
                 agent.SettlementId = settlement.Id;
 
                 // Add nearby agents within SpawnClusterRadius
@@ -5659,9 +5664,17 @@ public class AgentAI
                 var existing = _currentSettlements.FirstOrDefault(s => s.Id == agent.SettlementId);
                 if (existing != null)
                 {
+                    // US-008: Shelter on same tile replaces old one
+                    if (isShelter)
+                    {
+                        existing.Structures.RemoveAll(s => s.X == tx && s.Y == ty
+                            && Settlement.StructureToShelterTier(s.Type) != ShelterTier.None);
+                    }
                     existing.Structures.Add((tx, ty, structureId));
-                    existing.ShelterCount++;
-                    trace?.Invoke($"[TRACE Agent {agent.Id}] Added shelter to settlement '{existing.Name}' (now {existing.ShelterCount} shelters)");
+                    existing.ShelterCount = existing.Structures.Count(s =>
+                        Settlement.StructureToShelterTier(s.Type) != ShelterTier.None);
+                    existing.RecalculateShelterQuality();
+                    trace?.Invoke($"[TRACE Agent {agent.Id}] Added {structureId} to settlement '{existing.Name}' (shelter quality: {existing.ShelterQuality}, {existing.ShelterCount} shelters)");
                 }
             }
         }

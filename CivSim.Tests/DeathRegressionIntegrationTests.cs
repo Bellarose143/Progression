@@ -17,6 +17,8 @@ namespace CivSim.Tests;
 /// Explore water-block fix + direction depth 3→7 + farm resource clearing: RNG cascade. 55555: 0→0.
 /// World-scale settlement branch: RNG cascade from uncommitted changes. Seed 42: 1 (Eli),
 /// seed 1337: 1 (Quinn), seed 16001: 0, seed 99999: 0.
+/// US-008: Communal shelter quality + settlement-based reproduction/stability checks cascade.
+/// Seed 16001: 0→1 (Lily), seed 55555: 0→1 (Cole).
 /// </summary>
 [Collection("Integration")]
 public class DeathRegressionIntegrationTests
@@ -26,8 +28,8 @@ public class DeathRegressionIntegrationTests
     [Theory]
     [InlineData(42, 1)]
     [InlineData(1337, 1)]
-    [InlineData(16001, 0)]
-    [InlineData(55555, 0)]
+    [InlineData(16001, 1)]
+    [InlineData(55555, 1)]
     [InlineData(99999, 0)]
     public void Integration_DeathBaseline(int seed, int expectedDeaths)
     {

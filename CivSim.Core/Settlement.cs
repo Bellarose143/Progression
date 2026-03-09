@@ -89,6 +89,40 @@ public class Settlement
         Id = explicitId;
     }
 
+    /// <summary>
+    /// Recalculates ShelterQuality from the Structures list, taking the highest tier found.
+    /// Called when structures are added or removed.
+    /// </summary>
+    public void RecalculateShelterQuality()
+    {
+        var best = ShelterTier.None;
+        foreach (var (_, _, type) in Structures)
+        {
+            var tier = StructureToShelterTier(type);
+            if (tier > best) best = tier;
+        }
+        ShelterQuality = best;
+    }
+
+    /// <summary>Maps a structure type string to its ShelterTier. Returns None for non-shelter structures.</summary>
+    public static ShelterTier StructureToShelterTier(string structureType) => structureType switch
+    {
+        "lean_to" => ShelterTier.LeanTo,
+        "shelter" => ShelterTier.LeanTo, // "shelter" is treated as equivalent to lean_to
+        "reinforced_shelter" => ShelterTier.ReinforcedShelter,
+        "improved_shelter" => ShelterTier.ImprovedShelter,
+        _ => ShelterTier.None,
+    };
+
+    /// <summary>Returns the SimConfig float value for the current ShelterQuality.</summary>
+    public float GetShelterQualityFloat() => ShelterQuality switch
+    {
+        ShelterTier.ImprovedShelter => SimConfig.ShelterQualityImproved,
+        ShelterTier.ReinforcedShelter => SimConfig.ShelterQualityImproved, // reinforced uses same quality as improved
+        >= ShelterTier.LeanTo => SimConfig.ShelterQualityLeanTo,
+        _ => 0f,
+    };
+
     public override string ToString()
     {
         return $"{Name} at ({CenterTile.X},{CenterTile.Y}) - {ShelterCount} shelters, {Members.Count} residents";

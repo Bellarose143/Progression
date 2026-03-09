@@ -12,6 +12,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - World gen uses `_largeWorld` (Width/Height >= 200) to switch between 350×350 and legacy resource amounts — preserves RNG sequence for small test worlds
 - Anti-pattern #11 (RNG cascade): ANY change to random call count/order cascades ALL downstream generation. Conditional branching on world size preserves old test baselines. When adding new Random.Next() calls in AgentAI, use a separate RNG instance seeded deterministically (e.g., from tile position + tick).
 - The "manual commit" (8948157) contains many pre-implemented changes — always verify ACs against existing code before writing new code
+- Settlement-based exposure must still require proximity to shelter structures — don't make all members always sheltered regardless of distance
 - Pre-existing test failures also include: AnimalEntityTests.FleeSlow_CowMovesSlower, MoveDominanceTests.FounderAgent_Move_Below_60_Percent_LateGame
 - Tests that use distance thresholds (e.g., CaretakerRange, CaretakerMTMEscapeDist) need grid sizes and agent positions scaled for new 350×350 constants — reference SimConfig values instead of hardcoding distances
 
@@ -143,4 +144,32 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Settlements are now persistent in Simulation.Settlements — no longer recreated each detection interval. New code should treat them as durable entities.
   - The SettlementDetector.Detect() static method still exists but is no longer called from Simulation.Tick(). It may be useful for diagnostics or backward compat.
   - Founding groups (Settlement with Id=-1) still created by SettlementKnowledge for pre-shelter knowledge sharing. They coexist with formal settlements (positive Ids).
+---
+
+## 2026-03-09 - US-008
+- Implemented communal shelter quality system for settlements
+- Changes to Settlement.cs:
+  - Added RecalculateShelterQuality() method — iterates Structures, takes highest ShelterTier
+  - Added StructureToShelterTier() static helper — maps structure strings to ShelterTier enum
+  - Added GetShelterQualityFloat() — returns SimConfig float value for current ShelterQuality
+- Changes to AgentAI.cs CompleteBuild:
+  - Shelter on same tile replaces old shelter in both Tile.Structures and Settlement.Structures
+  - RecalculateShelterQuality() called after any shelter is built (founding or adding)
+  - ShelterCount recalculated from settlement structures on each addition
+- Changes to Agent.cs:
+  - ComputeStabilityScore takes optional List<Settlement> parameter, uses Settlement.ShelterQuality for shelter quality score (falls back to tile check for agents without settlement)
+  - CanReproduceWithPartner takes optional List<Settlement>, uses Settlement.ShelterQuality for shelter access check (settlement members with shelter always have access)
+  - HasShelterNearby renamed to HasShelterAccess — settlement-first, tile-fallback
+- Changes to Simulation.cs:
+  - Exposure check uses settlement shelter structures for proximity (more efficient than full tile scan) — agents must still be near a settlement shelter structure to be sheltered
+- Changes to UtilityScorer.cs:
+  - ScoreReproduce passes settlements to CanReproduceWithPartner and ComputeStabilityScore
+- Updated baseline tests: D25bBaselineTests and DeathRegressionIntegrationTests for new death counts from behavioral cascade (seeds 16001, 55555: 0→1 deaths)
+- Build: 0 errors
+- Tests: 335/335 pass (0 failures)
+- Files changed: Settlement.cs, AgentAI.cs, Agent.cs, Simulation.cs, UtilityScorer.cs, D25bBaselineTests.cs, DeathRegressionIntegrationTests.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Settlement-based exposure must still require proximity to shelter structures — making all settlement members always sheltered regardless of distance breaks behavioral tests (OpportunisticPickup) and is unrealistic for explorers
+  - Communal shelter quality changes cascade agent behavior (death counts shift across seeds) — always update baseline tests after shelter/reproduction changes
+  - The HasShelterAccess pattern: settlement-first (O(structures) check), tile-scan fallback (O(radius²)) — more efficient for settlement members
 ---

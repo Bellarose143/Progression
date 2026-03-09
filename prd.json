@@ -142,7 +142,7 @@
         "dotnet test passes"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Grep for all places that check shelter quality or shelter tier on agents. They should now go through Settlement. Agents without a settlement (shouldn't happen normally, but edge case) fall back to individual tile checks."
     },
     {

@@ -61,7 +61,7 @@ public static class UtilityScorer
         // GDD v1.8: Teach removed — knowledge propagation is communal within settlements
         ScoreBuild(agent, world, currentTile, results);
         ScoreSocialize(agent, world, currentTick, results);
-        ScoreReproduce(agent, world, currentTile, results, allAgents);
+        ScoreReproduce(agent, world, currentTile, results, allAgents, settlements);
         ScoreExperiment(agent, world, currentTick, random, results, knowledgeSystem, settlements, trace);
         ScoreReturnHome(agent, results);
         ScoreDepositGranary(agent, world, currentTile, currentTick, results);
@@ -187,7 +187,7 @@ public static class UtilityScorer
         ScoreTendFarm(agent, world, currentTile, currentTick, results);
         ScoreBuild(agent, world, currentTile, results);
         ScoreSocialize(agent, world, currentTick, results);
-        ScoreReproduce(agent, world, currentTile, results, allAgents);
+        ScoreReproduce(agent, world, currentTile, results, allAgents, settlements);
         ScoreExperiment(agent, world, currentTick, random, results, knowledgeSystem, settlements, trace);
         ScoreDepositGranary(agent, world, currentTile, currentTick, results);
         ScoreWithdrawGranary(agent, world, currentTile, currentTick, results);
@@ -986,7 +986,7 @@ public static class UtilityScorer
     /// GDD v1.8 Section 3: Reproduction scoring using stability score system.
     /// Score = 0.3 × stabilityScore. Hard gates: CanReproduceWithPartner (age, cooldown, shelter proximity).
     /// </summary>
-    private static void ScoreReproduce(Agent agent, World world, Tile currentTile, List<ScoredAction> results, List<Agent>? allAgents = null)
+    private static void ScoreReproduce(Agent agent, World world, Tile currentTile, List<ScoredAction> results, List<Agent>? allAgents = null, List<Settlement>? settlements = null)
     {
         if (!agent.CanReproduce()) return;
 
@@ -996,12 +996,12 @@ public static class UtilityScorer
         var nearby = new List<Agent>(adjacentAgents);
         nearby.AddRange(samePos);
 
-        var partner = nearby.FirstOrDefault(a => agent.CanReproduceWithPartner(a, world) && a.Id != agent.Id);
+        var partner = nearby.FirstOrDefault(a => agent.CanReproduceWithPartner(a, world, settlements) && a.Id != agent.Id);
         if (partner == null) return;
 
         // Compute stability score — uses rolling history, food reserves, shelter, dependents, health
         float stabilityScore = allAgents != null
-            ? agent.ComputeStabilityScore(world, allAgents)
+            ? agent.ComputeStabilityScore(world, allAgents, settlements)
             : 0.3f; // Fallback if allAgents not provided (backward compat)
 
         float score = 0.3f * stabilityScore;
