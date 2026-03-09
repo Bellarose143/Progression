@@ -1350,49 +1350,26 @@ public class Agent
     }
 
     /// <summary>
-    /// GDD v1.8 Section 3: Additional hard gate — both agents must have shelter within 5 tiles.
-    /// "No breeding in the wild." Uses KnownStructures (permanent memory) for efficiency.
+    /// GDD v1.8 Section 3: Additional hard gate — both agents must belong to a settlement
+    /// with shelter. "No breeding in the wild." US-011: Settlement membership required.
     /// </summary>
     public bool CanReproduceWithPartner(Agent partner, World world, List<Settlement>? settlements = null)
     {
         if (IsMale == partner.IsMale) return false;
         if (!CanReproduce() || !partner.CanReproduce()) return false;
-        return HasShelterAccess(world, SimConfig.ReproductionShelterProximity, settlements)
-            && partner.HasShelterAccess(world, SimConfig.ReproductionShelterProximity, settlements);
+        return HasSettlementShelter(settlements)
+            && partner.HasSettlementShelter(settlements);
     }
 
     /// <summary>
-    /// US-008: Checks shelter access. If agent has a settlement with shelter quality,
-    /// returns true. Falls back to tile-based proximity check for agents without a settlement.
+    /// US-011: Checks that agent belongs to a settlement with shelter quality > None.
+    /// Agents without a settlement cannot reproduce — they must build shelter first (which founds a settlement).
     /// </summary>
-    private bool HasShelterAccess(World world, int radius, List<Settlement>? settlements)
+    private bool HasSettlementShelter(List<Settlement>? settlements)
     {
-        // Settlement-based check: if agent belongs to a settlement with any shelter, they have access
-        if (SettlementId.HasValue && settlements != null)
-        {
-            var settlement = settlements.FirstOrDefault(s => s.Id == SettlementId.Value);
-            if (settlement != null && settlement.ShelterQuality > ShelterTier.None)
-                return true;
-        }
-
-        // Fallback for agents without a settlement: tile-based proximity check
-        // Check permanent landmark memory first (efficient, no world lookups)
-        foreach (var ks in KnownStructures)
-        {
-            if ((ks.StructureType == "lean_to" || ks.StructureType == "shelter" || ks.StructureType == "improved_shelter")
-                && Math.Max(Math.Abs(ks.X - X), Math.Abs(ks.Y - Y)) <= radius)
-                return true;
-        }
-        // Fallback: scan nearby tiles in the world (covers edge case where structure
-        // was built but not yet perceived into permanent memory)
-        for (int dx = -radius; dx <= radius; dx++)
-            for (int dy = -radius; dy <= radius; dy++)
-            {
-                int tx = X + dx, ty = Y + dy;
-                if (world.IsInBounds(tx, ty) && world.GetTile(tx, ty).HasShelter)
-                    return true;
-            }
-        return false;
+        if (!SettlementId.HasValue || settlements == null) return false;
+        var settlement = settlements.FirstOrDefault(s => s.Id == SettlementId.Value);
+        return settlement != null && settlement.ShelterQuality > ShelterTier.None;
     }
 
     /// <summary>

@@ -185,6 +185,7 @@ public class OpportunisticPickupTests
             .AgentHome("Picker", 0, 0)
             .AgentHome("Partner", 0, 0)
             .ShelterAt(0, 0)
+            .SettlementWith(0, 0, "Picker", "Partner")
             .HomeStorageAt(0, 0, ResourceType.Berries, 50)
             // Place ONLY food on surrounding tiles — no Stone/Ore/Wood
             .ResourceAt(1, 0, ResourceType.Berries, 20)

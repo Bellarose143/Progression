@@ -19,6 +19,7 @@ public class ReproductionTests
             .AddAgent("Adam", isMale: true,  hunger: 90f).AgentAt("Adam", 0, 0).AgentHome("Adam", 0, 0).AgentCooldown("Adam", 0)
             .AddAgent("Eve",  isMale: false, hunger: 90f).AgentAt("Eve",  1, 0).AgentHome("Eve",  0, 0).AgentCooldown("Eve", 0)
             .ShelterAt(0, 0)
+            .SettlementWith(0, 0, "Adam", "Eve")
             .HomeStorageAt(0, 0, ResourceType.Berries, 80)
             .ResourceAt(-1, 0, ResourceType.Berries, 40)
             .ResourceAt(0, -1, ResourceType.Berries, 40)
@@ -40,6 +41,7 @@ public class ReproductionTests
             .AddAgent("Tom",   isMale: true, hunger: 90f).AgentAt("Tom",   0, 0).AgentHome("Tom",   0, 0).AgentCooldown("Tom", 0)
             .AddAgent("Jerry", isMale: true, hunger: 90f).AgentAt("Jerry", 1, 0).AgentHome("Jerry", 0, 0).AgentCooldown("Jerry", 0)
             .ShelterAt(0, 0)
+            .SettlementWith(0, 0, "Tom", "Jerry")
             .HomeStorageAt(0, 0, ResourceType.Berries, 80)
             .ResourceAt(-1, 0, ResourceType.Berries, 30)
             .ResourceAt(0, 1,  ResourceType.Berries, 30)
@@ -58,25 +60,25 @@ public class ReproductionTests
             .GridSize(32, 32).Seed(1)
             .AddAgent("Mark", isMale: true,  hunger: 80f).AgentAt("Mark", 0, 0).AgentCooldown("Mark", 0)
             .AddAgent("Lucy", isMale: false, hunger: 80f).AgentAt("Lucy", 1, 0).AgentCooldown("Lucy", 0)
-            // No shelter added — both agents are exposed.
+            // No shelter and no settlement — US-011: agents without a settlement cannot reproduce.
             .ResourceAt(0, 1,  ResourceType.Berries, 40)
             .ResourceAt(1, 1,  ResourceType.Berries, 40)
             .ResourceAt(-1, 0, ResourceType.Berries, 40)
             .Build();
 
-        // Tick-by-tick: while both agents remain exposed, no reproduction should occur.
-        // Agents may eventually discover lean_to and build shelter (which enables reproduction),
-        // so we only check the constraint while they're actually unsheltered.
+        // Tick-by-tick: while agents have no settlement, no reproduction should occur.
+        // Agents may eventually build shelter (which founds a settlement and enables reproduction),
+        // so we only check the constraint while they have no settlement.
         for (int t = 0; t < 1500; t++)
         {
-            bool anyExposed = sim.Simulation.Agents.Any(a => a.IsExposed);
-            if (!anyExposed) break; // Shelter built — constraint no longer applies
+            bool noSettlement = sim.Simulation.Agents.All(a => !a.SettlementId.HasValue);
+            if (!noSettlement) break; // Settlement founded — constraint no longer applies
 
             sim.Tick(1);
-            if (anyExposed)
+            if (noSettlement)
             {
                 Assert.True(sim.Simulation.Agents.Count == 2,
-                    $"Exposed agents (no shelter) should not reproduce (RULE-R2) at tick {t}");
+                    $"Agents without a settlement should not reproduce (US-011) at tick {t}");
             }
         }
     }
@@ -91,6 +93,7 @@ public class ReproductionTests
             .AddAgent("Young_M", isMale: true,  hunger: 90f).AgentAt("Young_M", 0, 0).AgentAge("Young_M", youthAge).AgentHome("Young_M", 0, 0).AgentCooldown("Young_M", 0)
             .AddAgent("Young_F", isMale: false, hunger: 90f).AgentAt("Young_F", 1, 0).AgentAge("Young_F", youthAge).AgentHome("Young_F", 0, 0).AgentCooldown("Young_F", 0)
             .ShelterAt(0, 0)
+            .SettlementWith(0, 0, "Young_M", "Young_F")
             .HomeStorageAt(0, 0, ResourceType.Berries, 80)
             .ResourceAt(-1, 0, ResourceType.Berries, 30)
             .ResourceAt(0, 1,  ResourceType.Berries, 30)
