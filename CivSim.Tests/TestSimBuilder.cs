@@ -256,6 +256,7 @@ public class TestSimBuilder
             {
                 settlement.Structures.Add((sx, sy, shelterType));
                 settlement.RecalculateShelterQuality();
+                settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
             }
 
             // Assign agents as members

@@ -3312,6 +3312,7 @@ public class AgentAI
                         {
                             settlement.Structures.Add((tx, ty, "farm"));
                             settlement.RecalculateTerritory(world.Width, world.Height);
+                            settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
                         }
                     }
                 }
@@ -5662,8 +5663,9 @@ public class AgentAI
                     }
                 }
 
-                // US-009: Calculate initial territory
+                // US-009: Calculate initial territory; US-012: Calculate initial zones
                 settlement.RecalculateTerritory(world.Width, world.Height);
+                settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
                 _currentSettlements.Add(settlement);
                 trace?.Invoke($"[TRACE Agent {agent.Id}] Founded settlement '{settlement.Name}' at ({tx},{ty}) with {settlement.Members.Count} members");
                 bus.Emit(currentTick,
@@ -5686,8 +5688,9 @@ public class AgentAI
                     existing.ShelterCount = existing.Structures.Count(s =>
                         Settlement.StructureToShelterTier(s.Type) != ShelterTier.None);
                     existing.RecalculateShelterQuality();
-                    // US-009: Recalculate territory on structure change
+                    // US-009: Recalculate territory on structure change; US-012: Recalculate zones
                     existing.RecalculateTerritory(world.Width, world.Height);
+                    existing.Zones.Recalculate(existing.Structures, existing.CenterTile);
                     trace?.Invoke($"[TRACE Agent {agent.Id}] Added {structureId} to settlement '{existing.Name}' (shelter quality: {existing.ShelterQuality}, {existing.ShelterCount} shelters)");
                 }
             }
@@ -5735,6 +5738,7 @@ public class AgentAI
                     {
                         settlement.Structures.Add((tx, ty, "farm"));
                         settlement.RecalculateTerritory(world.Width, world.Height);
+                        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
                     }
                 }
             }

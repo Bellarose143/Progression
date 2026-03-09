@@ -70,6 +70,9 @@ public class Settlement
     /// <summary>Communal knowledge shared by all settlement members.</summary>
     public HashSet<string> SharedKnowledge { get; } = new();
 
+    /// <summary>US-012: Zone centers for structure placement scoring.</summary>
+    public SettlementZones Zones { get; private set; } = null!;
+
     /// <summary>Animal pens belonging to this settlement.</summary>
     public List<Pen> Pens { get; } = new();
 
@@ -77,6 +80,7 @@ public class Settlement
     public Settlement()
     {
         Id = _nextId++;
+        Zones = new SettlementZones(CenterTile);
     }
 
     /// <summary>
@@ -87,6 +91,7 @@ public class Settlement
     internal Settlement(int explicitId)
     {
         Id = explicitId;
+        Zones = new SettlementZones(CenterTile);
     }
 
     /// <summary>
