@@ -341,3 +341,32 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - The HasAnyStructure filter (excluding "farm" and "cleared") is the hard constraint for occupied tiles; scoring penalties are soft guidance on top
   - ScoreSurplusDrives has a duplicate granary scoring path that must also be updated when changing granary placement logic (3 total call sites for granary: ScoreBuild main, ScoreSurplusDrives, and now both use PlacementScorer)
 ---
+
+## 2026-03-09 - US-016
+- Implemented biome-dependent perception radius replacing flat SimConfig.PerceptionRadius
+- Changes to SimConfig.cs:
+  - Added GetPerceptionRadius(BiomeType) method: Plains=30, Forest=12, Mountain=20, Desert=35
+  - Added PerceptionRadiusWaterEdge=25 constant (for tiles adjacent to water)
+  - Added GetBiomePerceptionMultiplier(BiomeType) for scaling animal detection ranges
+- Changes to Agent.cs:
+  - Perceive() active scan uses biome-dependent radius from current tile
+  - Water edge bonus: max(biome radius, 25) when adjacent to water tile
+- Changes to UtilityScorer.cs:
+  - CalculateFoodSaturation uses biome-dependent radius
+  - Wolf pup taming perception check uses biome-dependent radius
+- Changes to AnimalAI.cs:
+  - CheckFleeTrigger: detection range scaled by biome multiplier
+  - Taming decay check: detection range scaled by biome multiplier
+  - Flee escape check: detection range scaled by biome multiplier
+- Changes to World.cs:
+  - HasAdjacentBiome made public (was private) for water edge detection
+- Updated baselines: D25bBaselineTests and DeathRegressionIntegrationTests (seeds 16001: 2→0, 1337: 1→0 — better perception helps agents survive)
+- Build: 0 errors
+- Tests: 352/356 pass, 4 failures were baseline death count cascades (updated)
+- Files changed: SimConfig.cs, Agent.cs, UtilityScorer.cs, AnimalAI.cs, World.cs, JoshuaTick960Diagnostic.cs, D25bBaselineTests.cs, DeathRegressionIntegrationTests.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Biome-dependent perception changes agent behavior significantly — agents survive better with larger perception in plains/desert, causing death count cascades across multiple seeds
+  - Water edge perception is a max() override, not a replacement — only applies when the biome radius is less than 25 (mainly benefits Forest tiles near water)
+  - Animal detection range scaling uses a multiplier (biome radius / default radius) applied to their species-specific DetectionRange
+  - Mountain(high)=40 is deferred — would need an elevation concept not yet in the codebase
+---
