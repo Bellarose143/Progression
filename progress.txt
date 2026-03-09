@@ -318,3 +318,26 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Farm directional placement causes behavioral cascade (different farm locations → different agent movement → different death counts) — always update D25b and DeathRegression baselines
   - The adjacency bonus (+3.0) is the strongest farm scoring signal, ensuring contiguous growth as designed
 ---
+
+## 2026-03-09 - US-015
+- Implemented pen and granary placement scoring + build range enforcement
+- Changes to PlacementScorer.cs:
+  - Added ScorePen(): +2.0 adjacent pens, +1.5 within 5 of AnimalCenter, +1.0 between Ag/Res midpoint, -3.0 farm tiles, -2.0 shelter tiles
+  - Added ScoreGranary(): +2.0 between Ag/Res midpoint, +1.5 within 5 of ResCenter, -2.0 farm tiles
+  - Added "animal_pen" and "granary" to FindBestTile switch
+  - Added HasAnyStructure filter for pen/granary/farm candidates (no placement on occupied tiles)
+- Changes to UtilityScorer.cs:
+  - ScoreBuild Priority 3 (granary): uses PlacementScorer when agent has settlement, settlement-level duplicate check, fallback for agents without settlement
+  - ScoreBuild Priority 5 (animal_pen): uses PlacementScorer when agent has settlement, settlement-level duplicate check, fallback for agents without settlement
+  - ScoreSurplusDrives (duplicate granary path): same PlacementScorer pattern applied
+- Changes to PlacementScorerTests.cs: 8 new tests (pen adjacency, pen avoids farm/shelter/occupied tiles, granary midpoint preference, granary avoids farm/occupied tiles, build range enforcement for all types)
+- Build: 0 errors
+- Tests: 356/356 pass (0 failures) — 21 PlacementScorer, 114 key categories, 5+5 integration baselines all green
+- No baseline updates needed — pen/granary scoring only triggers after animal_domestication/granary discovery which rarely occurs in 50K tick baselines
+- Files changed: PlacementScorer.cs, UtilityScorer.cs, PlacementScorerTests.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - "Between X and Y" scoring is approximated as within 5 tiles of the midpoint between X and Y centers
+  - Pen/granary scoring changes don't cascade death baselines because they only activate after late-game discoveries (animal_domestication, granary recipe)
+  - The HasAnyStructure filter (excluding "farm" and "cleared") is the hard constraint for occupied tiles; scoring penalties are soft guidance on top
+  - ScoreSurplusDrives has a duplicate granary scoring path that must also be updated when changing granary placement logic (3 total call sites for granary: ScoreBuild main, ScoreSurplusDrives, and now both use PlacementScorer)
+---
