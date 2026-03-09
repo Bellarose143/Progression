@@ -19,6 +19,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - PlacementScorer only applies when agent has a settlement — first shelter founding uses HomeTile/currentTile fallback
 - Tile.Biome is read-only — use Structures.Add("cleared") to make tiles farmable in tests, not biome assignment
 - Always call Settlement.ResetIdCounter() in test setup alongside Agent/Animal/Carcass/Pen
+- xUnit test filter on WSL: use `--filter "Category%21%3DSlow"` (URL-encoded !=) instead of `--filter "Category!=Slow"` which gets shell-escaped incorrectly
 
 ---
 
@@ -394,4 +395,20 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - PressureMap is rebuilt on cadence (every 480 ticks) — reusing the array avoids GC allocation of 490KB each time
   - Territory overlay rendering: always iterate visible range and check HashSet membership, never iterate all territory tiles (which could be thousands when zoomed in on a small area)
   - The existing perception system uses bounded radius (Chebyshev distance), NOT all-tile scanning — this is architecturally correct for 122,500 tiles
+---
+
+## 2026-03-09 - US-018
+- **Verified** all camera navigation improvements already implemented in prior session
+- All ACs confirmed met:
+  - H key: jumps to first settlement with members, zoom 1.0 (RaylibRenderer.cs:190-207)
+  - F key (no agent selected): zooms to fit entire world (RaylibRenderer.cs:210-218)
+  - Pan speed scales with zoom: `10.0f / camera.Zoom` (RaylibRenderer.cs:161)
+  - Boundary clamping: prevents scrolling into void (RaylibRenderer.cs:221-234)
+  - Mouse wheel zoom on cursor: GetScreenToWorld2D before/after pattern (RaylibRenderer.cs:140-148)
+- Build: 0 errors
+- Tests: 330/330 pass (0 failures, Category!=Slow filter)
+- Files changed: prd.json (marked passes:true), progress.txt
+- **Learnings for future iterations:**
+  - The "manual commit" (8948157) pre-implemented many camera navigation features — always verify ACs before coding
+  - xUnit test filter on WSL requires URL-encoded != (`%21%3D`) for Category!=Slow to work
 ---
