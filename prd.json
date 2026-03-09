@@ -194,7 +194,7 @@
         "dotnet test passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Grep for reproduction-related shelter checks in AgentAI.cs and Agent.cs. Replace tile-proximity shelter checks with Settlement.ShelterQuality checks. The reproduction balance constants (MinAge=25, Cooldown=40, BaseChance=0.35, FoodCost=5) are UNCHANGED."
     },
     {

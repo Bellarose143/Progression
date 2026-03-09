@@ -15,6 +15,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - Settlement-based exposure must still require proximity to shelter structures — don't make all members always sheltered regardless of distance
 - Pre-existing test failures also include: AnimalEntityTests.FleeSlow_CowMovesSlower, MoveDominanceTests.FounderAgent_Move_Below_60_Percent_LateGame
 - Tests that use distance thresholds (e.g., CaretakerRange, CaretakerMTMEscapeDist) need grid sizes and agent positions scaled for new 350×350 constants — reference SimConfig values instead of hardcoding distances
+- Tests with shelter that run agent AI should also create settlements via SettlementWith() to avoid behavioral cascade from settlement-gated reproduction
 
 ---
 
@@ -218,4 +219,30 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Territory overlay is renderer-only (no Core changes), so no risk of behavioral cascade
   - The Render method signature uses optional parameter to maintain backward compatibility with any other callers
   - Frustum culling pattern: GetScreenToWorld2D for bounds, Math.Floor for negative coords, +/- 1 tile margin
+---
+
+## 2026-03-09 - US-011
+- Reproduction now requires settlement membership with shelter quality > None (no tile-scan fallback)
+- Changes to Agent.cs:
+  - CanReproduceWithPartner now calls HasSettlementShelter() instead of HasShelterAccess()
+  - HasSettlementShelter(): returns true only if agent has SettlementId and settlement has ShelterQuality > None
+  - Removed HasShelterAccess() (tile-scanning fallback for reproduction eliminated)
+  - Agents without a settlement cannot reproduce — they must build shelter first (which founds a settlement per US-007)
+- Changes to TestSimBuilder.cs:
+  - Added SettlementSpec class and SettlementWith(dx, dy, agentNames) fluent method
+  - Build() Phase 4: creates Settlement entities, adds shelter structures, assigns agents as members
+  - Enables tests to create settlements without running full simulation ticks
+- Changes to ReproductionTests.cs:
+  - All 4 tests updated: ideal conditions, same-sex, exposed/no-settlement, under-age
+  - Tests with shelter now also create settlements via SettlementWith()
+  - "Exposed" test updated to check settlement membership instead of IsExposed flag
+- Changes to OpportunisticPickupTests.cs:
+  - OpportunisticPickup_FoodExcluded: added SettlementWith to prevent behavioral cascade from reproduction gate change
+- Build: 0 errors
+- Tests: 335/335 pass (0 failures)
+- Files changed: Agent.cs, TestSimBuilder.cs, ReproductionTests.cs, OpportunisticPickupTests.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Removing reproduction's tile-scan fallback causes behavioral cascade in tests where agents have shelter but no settlement — their utility scoring changes, leading to different movement patterns
+  - TestSimBuilder.SettlementWith() is the standard way to set up settlements in tests — shelter on tile + settlement entity with members
+  - The CanReproduceWithPartner method still accepts World parameter for API compatibility but no longer uses it for shelter checks
 ---
