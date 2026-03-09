@@ -370,3 +370,28 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Animal detection range scaling uses a multiplier (biome radius / default radius) applied to their species-specific DetectionRange
   - Mountain(high)=40 is deferred — would need an elevation concept not yet in the codebase
 ---
+
+## 2026-03-09 - US-017
+- Performance profiling and optimization for 122,500 tiles (350×350 world)
+- Verified existing systems already meet most ACs:
+  - Frustum culling: WorldRenderer.cs uses GetScreenToWorld2D to render only visible tiles
+  - Spatial indexing: AgentsByPosition/AnimalsByPosition maintained incrementally (no full rebuilds)
+  - Perception queries: bounded by biome-dependent radius (max ~5000 tiles), not all 122,500
+  - Territory recalculation: event-driven (structure changes only), not per-tick
+- New optimizations implemented:
+  - **Tile.cs**: Replaced per-tick `TicksSinceLastGathered++` counter (122,500 increments/tick) with computed `LastGatheredTick` (compute on demand in TryRegen only)
+  - **World.cs RegenerateResources**: Mountain tiles skipped entirely (no renewable resources), eliminates ~20% of tile iterations
+  - **World.cs BuildPressureMap**: Reuses PressureMap array (Array.Clear) instead of allocating new int[350,350] each rebuild — reduces GC pressure
+  - **World.cs TryRegen**: Overgrazing check now computes `currentTick - tile.LastGatheredTick` on demand instead of reading pre-incremented counter
+  - **RaylibRenderer.cs territory overlay**: Iterates visible tile range and checks HashSet membership (O(1) per tile) instead of iterating ALL territory tiles then frustum-culling
+  - **AgentAI.cs**: Updated gathering to set `tile.LastGatheredTick = currentTick` instead of resetting counter
+- Build: 0 errors
+- Tests: 339+ pass (116 unit + 10 baseline + 89 behavioral + 7 integration + 117 more), remaining ~17 are D25dFinalValidation 50K-tick tests (40+ min each)
+- Files changed: Tile.cs, World.cs, AgentAI.cs, RaylibRenderer.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Per-tick full-grid operations (122,500 tiles) should be avoided — convert counters to computed-on-demand properties where possible
+  - Mountain tiles never regenerate resources (Stone/Ore are non-renewable) — safe to skip in regen loop
+  - PressureMap is rebuilt on cadence (every 480 ticks) — reusing the array avoids GC allocation of 490KB each time
+  - Territory overlay rendering: always iterate visible range and check HashSet membership, never iterate all territory tiles (which could be thousands when zoomed in on a small area)
+  - The existing perception system uses bounded radius (Chebyshev distance), NOT all-tile scanning — this is architecturally correct for 122,500 tiles
+---
