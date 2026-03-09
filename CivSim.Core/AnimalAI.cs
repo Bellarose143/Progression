@@ -465,7 +465,7 @@ public static class AnimalAI
     /// Structure deterrent prevents aggression near player structures.
     /// </summary>
     /// <summary>D25c: Check if a dangerous animal should aggro on a nearby agent. Called AFTER normal animal AI to avoid RNG cascade.</summary>
-    public static bool CheckAggroTrigger(Animal animal, World world, int currentTick, IReadOnlyList<Agent> agents)
+    public static bool CheckAggroTrigger(Animal animal, World world, int currentTick, IReadOnlyList<Agent> agents, IReadOnlyList<Settlement>? settlements = null)
     {
         // Only Boar and Wolf can aggro
         if (animal.Species != AnimalSpecies.Boar && animal.Species != AnimalSpecies.Wolf) return false;
@@ -473,15 +473,15 @@ public static class AnimalAI
         if (animal.IsDomesticated) return false;
         if (animal.AggressiveCooldown > 0) return false;
 
-        // Structure deterrent: check if any structure within range
-        if (HasNearbyStructure(animal.X, animal.Y, world, SimConfig.StructureDeterrentRange)) return false;
+        // US-009: Territory deterrent — no aggression within settlement territory
+        if (Settlement.IsInAnyTerritory(settlements, animal.X, animal.Y)) return false;
 
-        // Home deterrent: don't aggro near any agent's home (settlements are safe even before structures built)
+        // Home deterrent (fallback for agents without settlement territory yet)
         foreach (var agent in agents)
         {
             if (!agent.IsAlive || !agent.HomeTile.HasValue) continue;
             int distToHome = Math.Max(Math.Abs(animal.X - agent.HomeTile.Value.X), Math.Abs(animal.Y - agent.HomeTile.Value.Y));
-            if (distToHome <= SimConfig.StructureDeterrentRange + 2) return false; // 5 tile radius around homes
+            if (distToHome <= SimConfig.StructureDeterrentRange + 2) return false;
         }
 
         int aggroRange = animal.Species == AnimalSpecies.Boar ? SimConfig.BoarChargeRange : SimConfig.WolfAggroRange;
@@ -507,22 +507,6 @@ public static class AnimalAI
         animal.AggressiveTargetAgentId = nearest.Id;
         TransitionState(animal, AnimalState.Aggressive);
         return true;
-    }
-
-    /// <summary>D25c: Checks if any tile within range has a structure (deterrent for aggression).</summary>
-    private static bool HasNearbyStructure(int x, int y, World world, int range)
-    {
-        for (int dx = -range; dx <= range; dx++)
-        {
-            for (int dy = -range; dy <= range; dy++)
-            {
-                int tx = x + dx, ty = y + dy;
-                if (!world.IsInBounds(tx, ty)) continue;
-                var tile = world.GetTile(tx, ty);
-                if (tile.Structures.Count > 0) return true;
-            }
-        }
-        return false;
     }
 
     /// <summary>

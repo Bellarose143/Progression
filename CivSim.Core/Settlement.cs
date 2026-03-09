@@ -123,6 +123,39 @@ public class Settlement
         _ => 0f,
     };
 
+    /// <summary>
+    /// US-009: Recalculates Territory from Structures. Every structure tile plus a 3-tile buffer is claimed.
+    /// Called when structures are added or removed.
+    /// </summary>
+    public void RecalculateTerritory(int worldWidth = 350, int worldHeight = 350)
+    {
+        Territory.Clear();
+        foreach (var (sx, sy, _) in Structures)
+        {
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                for (int dy = -3; dy <= 3; dy++)
+                {
+                    int tx = sx + dx;
+                    int ty = sy + dy;
+                    if (tx >= 0 && tx < worldWidth && ty >= 0 && ty < worldHeight)
+                        Territory.Add((tx, ty));
+                }
+            }
+        }
+    }
+
+    /// <summary>US-009: Checks if a tile is within any settlement's territory. O(1) per settlement.</summary>
+    public static bool IsInAnyTerritory(IReadOnlyList<Settlement>? settlements, int x, int y)
+    {
+        if (settlements == null) return false;
+        foreach (var s in settlements)
+        {
+            if (s.Territory.Contains((x, y))) return true;
+        }
+        return false;
+    }
+
     public override string ToString()
     {
         return $"{Name} at ({CenterTile.X},{CenterTile.Y}) - {ShelterCount} shelters, {Members.Count} residents";

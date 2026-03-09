@@ -3304,6 +3304,16 @@ public class AgentAI
                 {
                     tile.Structures.Add("farm");
                     ClearNonGrainResources(tile);
+                    // US-009: Add farm to settlement and recalculate territory
+                    if (agent.SettlementId != null && _currentSettlements != null)
+                    {
+                        var settlement = _currentSettlements.FirstOrDefault(s => s.Id == agent.SettlementId);
+                        if (settlement != null)
+                        {
+                            settlement.Structures.Add((tx, ty, "farm"));
+                            settlement.RecalculateTerritory(world.Width, world.Height);
+                        }
+                    }
                 }
                 StartTendFarm(agent, tx, ty, trace);
                 agent.RecordAction(ActionType.TendFarm, currentTick, $"Tending farm at ({tx},{ty})");
@@ -5652,6 +5662,8 @@ public class AgentAI
                     }
                 }
 
+                // US-009: Calculate initial territory
+                settlement.RecalculateTerritory(world.Width, world.Height);
                 _currentSettlements.Add(settlement);
                 trace?.Invoke($"[TRACE Agent {agent.Id}] Founded settlement '{settlement.Name}' at ({tx},{ty}) with {settlement.Members.Count} members");
                 bus.Emit(currentTick,
@@ -5674,6 +5686,8 @@ public class AgentAI
                     existing.ShelterCount = existing.Structures.Count(s =>
                         Settlement.StructureToShelterTier(s.Type) != ShelterTier.None);
                     existing.RecalculateShelterQuality();
+                    // US-009: Recalculate territory on structure change
+                    existing.RecalculateTerritory(world.Width, world.Height);
                     trace?.Invoke($"[TRACE Agent {agent.Id}] Added {structureId} to settlement '{existing.Name}' (shelter quality: {existing.ShelterQuality}, {existing.ShelterCount} shelters)");
                 }
             }
@@ -5713,6 +5727,16 @@ public class AgentAI
             {
                 tile.Structures.Add("farm");
                 ClearNonGrainResources(tile);
+                // US-009: Add farm to settlement and recalculate territory
+                if (agent.SettlementId != null && _currentSettlements != null)
+                {
+                    var settlement = _currentSettlements.FirstOrDefault(s => s.Id == agent.SettlementId);
+                    if (settlement != null)
+                    {
+                        settlement.Structures.Add((tx, ty, "farm"));
+                        settlement.RecalculateTerritory(world.Width, world.Height);
+                    }
+                }
             }
         }
 
@@ -6436,17 +6460,10 @@ public class AgentAI
         bool hasBow = agent.Knowledge.Contains("bow");
         if (!hasSpear && !hasBow) return;
 
-        // Structure deterrent
-        for (int dx = -SimConfig.StructureDeterrentRange; dx <= SimConfig.StructureDeterrentRange; dx++)
-        {
-            for (int dy = -SimConfig.StructureDeterrentRange; dy <= SimConfig.StructureDeterrentRange; dy++)
-            {
-                int tx = agent.X + dx, ty = agent.Y + dy;
-                if (world.IsInBounds(tx, ty) && world.GetTile(tx, ty).Structures.Count > 0) return;
-            }
-        }
+        // US-009: Territory deterrent — no involuntary combat within settlement territory
+        if (Settlement.IsInAnyTerritory(_currentSettlements, agent.X, agent.Y)) return;
 
-        // Home deterrent
+        // Home deterrent (fallback for agents without settlement territory)
         if (agent.HomeTile.HasValue)
         {
             int distFromHome = Math.Max(Math.Abs(agent.X - agent.HomeTile.Value.X), Math.Abs(agent.Y - agent.HomeTile.Value.Y));
