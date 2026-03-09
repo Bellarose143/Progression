@@ -41,12 +41,17 @@ public static class PlacementScorer
                 // Cannot place on tile that already has a structure of same type
                 if (tile.Structures.Contains(structureType)) continue;
 
+                // Farm tiles must be farmable (Plains or cleared land)
+                if (structureType == "farm" && !tile.IsFarmable) continue;
+
                 float score = structureType switch
                 {
                     "lean_to" or "shelter" or "reinforced_shelter" or "improved_shelter"
                         => ScoreShelter(tile, settlement),
                     "campfire" or "hearth"
                         => ScoreCampfire(tile, settlement),
+                    "farm"
+                        => ScoreFarm(tile, settlement),
                     _ => 0f,
                 };
 
@@ -121,6 +126,165 @@ public static class PlacementScorer
             score += 1.0f;
 
         return score;
+    }
+
+    /// <summary>
+    /// US-014: Finds the best tile for the FIRST farm in a settlement.
+    /// Scans 8 directions from ResidentialCenter, counts Plains tiles within 15 tiles,
+    /// selects direction with most suitable farmland, places first farm 8-10 tiles from center.
+    /// Returns null if no valid tile is found.
+    /// </summary>
+    public static (int X, int Y)? FindFirstFarmTile(
+        Settlement settlement,
+        World world,
+        int agentX,
+        int agentY)
+    {
+        var resCenter = settlement.Zones.ResidentialCenter;
+        int scanRange = 15;
+
+        // 8 directions: N, NE, E, SE, S, SW, W, NW
+        int[][] directions = new[]
+        {
+            new[] { 0, -1 }, new[] { 1, -1 }, new[] { 1, 0 }, new[] { 1, 1 },
+            new[] { 0, 1 }, new[] { -1, 1 }, new[] { -1, 0 }, new[] { -1, -1 }
+        };
+
+        int bestDirIndex = -1;
+        int bestPlainCount = 0;
+
+        // Scan each direction: count Plains tiles in a cone
+        for (int d = 0; d < 8; d++)
+        {
+            int ddx = directions[d][0];
+            int ddy = directions[d][1];
+            int plainsCount = 0;
+
+            for (int dist = 1; dist <= scanRange; dist++)
+            {
+                // Scan a widening cone: center line + 1 tile on each side perpendicular
+                int cx = resCenter.X + ddx * dist;
+                int cy = resCenter.Y + ddy * dist;
+
+                // Perpendicular direction for cone width
+                int px = -ddy, py = ddx;
+
+                for (int w = -1; w <= 1; w++)
+                {
+                    int tx = cx + px * w;
+                    int ty = cy + py * w;
+
+                    if (!world.IsInBounds(tx, ty)) continue;
+                    var tile = world.GetTile(tx, ty);
+                    if (tile.Biome == BiomeType.Plains || tile.Structures.Contains("cleared"))
+                        plainsCount++;
+                }
+            }
+
+            if (plainsCount > bestPlainCount)
+            {
+                bestPlainCount = plainsCount;
+                bestDirIndex = d;
+            }
+        }
+
+        if (bestDirIndex < 0 || bestPlainCount == 0) return null;
+
+        // Place first farm 8-10 tiles from center in the best direction
+        int bdx = directions[bestDirIndex][0];
+        int bdy = directions[bestDirIndex][1];
+
+        // Try distances 8, 9, 10 — pick the first farmable tile
+        for (int dist = 8; dist <= 10; dist++)
+        {
+            int fx = resCenter.X + bdx * dist;
+            int fy = resCenter.Y + bdy * dist;
+
+            if (!world.IsInBounds(fx, fy)) continue;
+            var tile = world.GetTile(fx, fy);
+            if (tile.Biome == BiomeType.Water) continue;
+            if (!tile.IsFarmable) continue;
+            if (tile.HasFarm) continue;
+            if (HasAnyStructure(tile)) continue;
+
+            return (fx, fy);
+        }
+
+        // Fallback: search nearby tiles around the 8-10 range in that direction
+        for (int dist = 7; dist <= 12; dist++)
+        {
+            for (int w = -2; w <= 2; w++)
+            {
+                int px = -bdy, py = bdx; // perpendicular
+                int fx = resCenter.X + bdx * dist + px * w;
+                int fy = resCenter.Y + bdy * dist + py * w;
+
+                if (!world.IsInBounds(fx, fy)) continue;
+                var tile = world.GetTile(fx, fy);
+                if (tile.Biome == BiomeType.Water) continue;
+                if (!tile.IsFarmable) continue;
+                if (tile.HasFarm) continue;
+                if (HasAnyStructure(tile)) continue;
+
+                return (fx, fy);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// US-014: Subsequent farm scoring.
+    /// +3.0 adjacent to existing farm, +2.0 within 5 tiles of AgriculturalCenter,
+    /// -3.0 within 5 tiles of ResidentialCenter, +1.0 Plains, -1.0 Forest,
+    /// -5.0 on existing structure tiles.
+    /// </summary>
+    private static float ScoreFarm(Tile tile, Settlement settlement)
+    {
+        float score = 0f;
+
+        // +3.0 adjacent to existing farm
+        if (HasAdjacentStructureOfType(tile, settlement, t => t == "farm"))
+            score += 3.0f;
+
+        // +2.0 within 5 tiles of AgriculturalCenter
+        var agCenter = settlement.Zones.AgriculturalCenter;
+        int distToAg = Math.Abs(tile.X - agCenter.X) + Math.Abs(tile.Y - agCenter.Y);
+        if (distToAg <= 5)
+            score += 2.0f;
+
+        // -3.0 within 5 tiles of ResidentialCenter
+        var resCenter = settlement.Zones.ResidentialCenter;
+        int distToRes = Math.Abs(tile.X - resCenter.X) + Math.Abs(tile.Y - resCenter.Y);
+        if (distToRes <= 5)
+            score -= 3.0f;
+
+        // +1.0 Plains
+        if (tile.Biome == BiomeType.Plains)
+            score += 1.0f;
+
+        // -1.0 Forest
+        if (tile.Biome == BiomeType.Forest)
+            score -= 1.0f;
+
+        // -5.0 on existing structure tiles (any structure that isn't a farm)
+        if (HasAnyStructure(tile))
+            score -= 5.0f;
+
+        return score;
+    }
+
+    /// <summary>
+    /// Checks if a tile has any non-farm structure (shelter, campfire, pen, granary, etc.)
+    /// </summary>
+    private static bool HasAnyStructure(Tile tile)
+    {
+        foreach (var s in tile.Structures)
+        {
+            if (s != "farm" && s != "cleared")
+                return true;
+        }
+        return false;
     }
 
     private static bool IsShelterType(string type) =>

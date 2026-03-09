@@ -28,8 +28,8 @@ public class DeathRegressionIntegrationTests
     [Theory]
     [InlineData(42, 1)]
     [InlineData(1337, 1)]
-    [InlineData(16001, 1)]
-    [InlineData(55555, 1)]
+    [InlineData(16001, 2)]  // US-014: farm directional placement cascade 1→2
+    [InlineData(55555, 0)]  // US-014: farm directional placement cascade 1→0
     [InlineData(99999, 0)]
     public void Integration_DeathBaseline(int seed, int expectedDeaths)
     {

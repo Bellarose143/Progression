@@ -243,7 +243,7 @@
         "dotnet test passes"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "The first farm placement is special — it defines where the entire agricultural zone develops. After the first farm, subsequent farms use the standard scoring which strongly favors adjacency (+3.0), naturally growing the farm as a block."
     },
     {

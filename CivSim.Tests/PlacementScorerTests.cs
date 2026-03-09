@@ -4,7 +4,7 @@ using Xunit;
 namespace CivSim.Tests;
 
 /// <summary>
-/// US-013: Tests for PlacementScorer — structure placement scoring for shelter and campfire.
+/// US-013/US-014: Tests for PlacementScorer — structure placement scoring.
 /// </summary>
 public class PlacementScorerTests
 {
@@ -199,5 +199,279 @@ public class PlacementScorerTests
             var tile = world.GetTile(result.Value.X, result.Value.Y);
             Assert.NotEqual(BiomeType.Water, tile.Biome);
         }
+    }
+
+    // ── US-014: Farm placement tests ──────────────────────────────────
+
+    /// <summary>
+    /// First farm placement should scan directions and pick a tile 8-10 tiles from residential center
+    /// in the direction with most Plains tiles.
+    /// </summary>
+    [Fact]
+    public void FirstFarm_PlacedAwayFromResidentialCenter()
+    {
+        // Use a larger world so there's room for 8-10 tile distance
+        var world = new World(48, 48, 42);
+        // Make a band of tiles east of center farmable via "cleared" structure
+        for (int d = 5; d <= 15; d++)
+            for (int w = -2; w <= 2; w++)
+                if (world.IsInBounds(24 + d, 24 + w))
+                {
+                    var t = world.GetTile(24 + d, 24 + w);
+                    if (!t.IsFarmable) t.Structures.Add("cleared");
+                }
+
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (24, 24)
+        };
+        settlement.Structures.Add((24, 24, "lean_to"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindFirstFarmTile(settlement, world, 24, 24);
+
+        Assert.NotNull(result);
+        // Should be 7-12 tiles from center (Chebyshev distance, since diagonal directions give larger Manhattan)
+        int chebyDist = Math.Max(Math.Abs(result.Value.X - 24), Math.Abs(result.Value.Y - 24));
+        Assert.True(chebyDist >= 7 && chebyDist <= 14,
+            $"First farm at ({result.Value.X},{result.Value.Y}), chebyshev dist={chebyDist} from center — expected 7-14 tiles");
+
+        // Should be on a farmable tile
+        var tile = world.GetTile(result.Value.X, result.Value.Y);
+        Assert.True(tile.IsFarmable, "First farm must be on a farmable tile");
+    }
+
+    /// <summary>
+    /// First farm should avoid water tiles.
+    /// </summary>
+    [Fact]
+    public void FirstFarm_AvoidsWater()
+    {
+        var world = new World(48, 48, 42);
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (24, 24)
+        };
+        settlement.Structures.Add((24, 24, "lean_to"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindFirstFarmTile(settlement, world, 24, 24);
+
+        if (result.HasValue)
+        {
+            var tile = world.GetTile(result.Value.X, result.Value.Y);
+            Assert.NotEqual(BiomeType.Water, tile.Biome);
+        }
+    }
+
+    /// <summary>
+    /// Subsequent farm placement should strongly prefer tiles adjacent to existing farms (+3.0 adjacency bonus).
+    /// </summary>
+    [Fact]
+    public void SubsequentFarm_PrefersAdjacentToExistingFarm()
+    {
+        var world = new World(48, 48, 42);
+        int centerX = 24, centerY = 24;
+
+        // Find a Plains tile 8-10 tiles from center to place first farm
+        (int fx, int fy) = FindPlainsTileNearDistance(world, centerX, centerY, 8);
+
+        // Also ensure adjacent tiles are farmable
+        for (int ddx = -2; ddx <= 2; ddx++)
+            for (int ddy = -2; ddy <= 2; ddy++)
+                if (world.IsInBounds(fx + ddx, fy + ddy))
+                {
+                    var t = world.GetTile(fx + ddx, fy + ddy);
+                    if (t.Biome == BiomeType.Water) continue;
+                    if (!t.IsFarmable) t.Structures.Add("cleared");
+                }
+
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (centerX, centerY)
+        };
+        settlement.Structures.Add((centerX, centerY, "lean_to"));
+        var firstFarmTile = world.GetTile(fx, fy);
+        firstFarmTile.Structures.Add("farm");
+        settlement.Structures.Add((fx, fy, "farm"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("farm", settlement, world, centerX, centerY);
+
+        Assert.NotNull(result);
+        // Should be adjacent to the existing farm
+        int dx2 = Math.Abs(result.Value.X - fx);
+        int dy2 = Math.Abs(result.Value.Y - fy);
+        Assert.True(dx2 <= 1 && dy2 <= 1,
+            $"Subsequent farm at ({result.Value.X},{result.Value.Y}) should be adjacent to existing farm at ({fx},{fy})");
+    }
+
+    /// <summary>
+    /// Farm placement should avoid tiles within 5 of ResidentialCenter (-3.0 penalty).
+    /// </summary>
+    [Fact]
+    public void Farm_AvoidsResidentialCenter()
+    {
+        var world = new World(48, 48, 42);
+        int centerX = 24, centerY = 24;
+
+        // Make a large area farmable so scoring has choices
+        for (int x = centerX - 15; x <= centerX + 15; x++)
+            for (int y = centerY - 15; y <= centerY + 15; y++)
+                if (world.IsInBounds(x, y))
+                {
+                    var t = world.GetTile(x, y);
+                    if (t.Biome != BiomeType.Water && !t.IsFarmable) t.Structures.Add("cleared");
+                }
+
+        (int fx, int fy) = FindPlainsTileNearDistance(world, centerX, centerY, 8);
+
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (centerX, centerY)
+        };
+        settlement.Structures.Add((centerX, centerY, "lean_to"));
+        var firstFarmTile = world.GetTile(fx, fy);
+        firstFarmTile.Structures.Add("farm");
+        settlement.Structures.Add((fx, fy, "farm"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("farm", settlement, world, centerX, centerY);
+
+        Assert.NotNull(result);
+        // Should not be within 5 tiles of residential center
+        int distToRes = Math.Abs(result.Value.X - centerX) + Math.Abs(result.Value.Y - centerY);
+        Assert.True(distToRes > 5,
+            $"Farm at ({result.Value.X},{result.Value.Y}), dist={distToRes} from residential center — should be >5");
+    }
+
+    /// <summary>
+    /// Farm placement should avoid tiles with existing non-farm structures (-5.0 penalty).
+    /// </summary>
+    [Fact]
+    public void Farm_AvoidsExistingStructures()
+    {
+        var world = new World(48, 48, 42);
+        int centerX = 24, centerY = 24;
+
+        (int fx, int fy) = FindPlainsTileNearDistance(world, centerX, centerY, 8);
+        // Make nearby tiles farmable
+        for (int ddx = -2; ddx <= 2; ddx++)
+            for (int ddy = -2; ddy <= 2; ddy++)
+                if (world.IsInBounds(fx + ddx, fy + ddy))
+                {
+                    var t = world.GetTile(fx + ddx, fy + ddy);
+                    if (t.Biome != BiomeType.Water && !t.IsFarmable) t.Structures.Add("cleared");
+                }
+
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (centerX, centerY)
+        };
+        settlement.Structures.Add((centerX, centerY, "lean_to"));
+        var farmTile = world.GetTile(fx, fy);
+        farmTile.Structures.Add("farm");
+        settlement.Structures.Add((fx, fy, "farm"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        var result = PlacementScorer.FindBestTile("farm", settlement, world, centerX, centerY);
+
+        Assert.NotNull(result);
+        // Should not be on the shelter tile
+        Assert.False(result.Value.X == centerX && result.Value.Y == centerY,
+            "Farm should not be placed on the shelter tile");
+    }
+
+    /// <summary>
+    /// Farms should grow as contiguous blocks — second and third farms should be near each other.
+    /// </summary>
+    [Fact]
+    public void Farms_GrowContiguously()
+    {
+        var world = new World(48, 48, 42);
+        int centerX = 24, centerY = 24;
+
+        (int fx, int fy) = FindPlainsTileNearDistance(world, centerX, centerY, 8);
+
+        // Make area around farm farmable
+        for (int ddx = -3; ddx <= 3; ddx++)
+            for (int ddy = -3; ddy <= 3; ddy++)
+                if (world.IsInBounds(fx + ddx, fy + ddy))
+                {
+                    var t = world.GetTile(fx + ddx, fy + ddy);
+                    if (t.Biome != BiomeType.Water && !t.IsFarmable) t.Structures.Add("cleared");
+                }
+
+        var settlement = new Settlement
+        {
+            Name = "TestVillage",
+            CenterTile = (centerX, centerY)
+        };
+        settlement.Structures.Add((centerX, centerY, "lean_to"));
+
+        // Place first farm
+        var ft1 = world.GetTile(fx, fy);
+        ft1.Structures.Add("farm");
+        settlement.Structures.Add((fx, fy, "farm"));
+
+        // Find an adjacent farmable non-water tile for second farm
+        int f2x = fx + 1, f2y = fy;
+        if (!world.IsInBounds(f2x, f2y) || world.GetTile(f2x, f2y).Biome == BiomeType.Water)
+        { f2x = fx; f2y = fy + 1; }
+        var ft2 = world.GetTile(f2x, f2y);
+        ft2.Structures.Add("farm");
+        settlement.Structures.Add((f2x, f2y, "farm"));
+        settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+
+        // Third farm should also be adjacent to the existing farm block
+        var result = PlacementScorer.FindBestTile("farm", settlement, world, centerX, centerY);
+
+        Assert.NotNull(result);
+        // Should be adjacent to at least one existing farm
+        bool adjToFarm1 = Math.Abs(result.Value.X - fx) <= 1 && Math.Abs(result.Value.Y - fy) <= 1;
+        bool adjToFarm2 = Math.Abs(result.Value.X - f2x) <= 1 && Math.Abs(result.Value.Y - f2y) <= 1;
+        Assert.True(adjToFarm1 || adjToFarm2,
+            $"Third farm at ({result.Value.X},{result.Value.Y}) should be adjacent to existing farms at ({fx},{fy}) or ({f2x},{f2y})");
+    }
+
+    /// <summary>
+    /// Helper: finds a non-Water, farmable tile approximately 'targetDist' tiles from (cx,cy).
+    /// </summary>
+    private static (int X, int Y) FindPlainsTileNearDistance(World world, int cx, int cy, int targetDist)
+    {
+        // Search in expanding rings from targetDist
+        for (int ring = 0; ring <= 5; ring++)
+        {
+            for (int d = targetDist - ring; d <= targetDist + ring; d++)
+            {
+                if (d < 1) continue;
+                // Check 8 directions at this distance
+                for (int dir = 0; dir < 8; dir++)
+                {
+                    int dx = dir switch { 0 => d, 1 => d, 2 => 0, 3 => -d, 4 => -d, 5 => -d, 6 => 0, _ => d };
+                    int dy = dir switch { 0 => 0, 1 => d, 2 => d, 3 => d, 4 => 0, 5 => -d, 6 => -d, _ => -d };
+                    int tx = cx + dx, ty = cy + dy;
+                    if (!world.IsInBounds(tx, ty)) continue;
+                    var tile = world.GetTile(tx, ty);
+                    if (tile.Biome != BiomeType.Water && tile.IsFarmable)
+                        return (tx, ty);
+                }
+            }
+        }
+        // Fallback: just find any farmable tile
+        for (int x = 0; x < world.Width; x++)
+            for (int y = 0; y < world.Height; y++)
+            {
+                var tile = world.GetTile(x, y);
+                if (tile.Biome != BiomeType.Water && tile.IsFarmable
+                    && Math.Abs(x - cx) + Math.Abs(y - cy) >= 6)
+                    return (x, y);
+            }
+        return (cx + targetDist, cy); // absolute fallback
     }
 }

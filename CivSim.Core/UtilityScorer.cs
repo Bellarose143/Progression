@@ -57,7 +57,7 @@ public static class UtilityScorer
         ScoreGatherFood(agent, world, currentTile, currentTick, results,
             hasHungryDependent: hungryDependent);
         ScoreGatherResource(agent, world, currentTile, currentTick, results, knowledgeSystem, settlements);
-        ScoreTendFarm(agent, world, currentTile, currentTick, results);
+        ScoreTendFarm(agent, world, currentTile, currentTick, results, settlements);
         // GDD v1.8: Teach removed — knowledge propagation is communal within settlements
         ScoreBuild(agent, world, currentTile, results, settlements);
         ScoreSocialize(agent, world, currentTick, results);
@@ -184,7 +184,7 @@ public static class UtilityScorer
             hasHungryDependent: hungryDependent);
 
         // ── Score Home-appropriate actions ────────────────────────────
-        ScoreTendFarm(agent, world, currentTile, currentTick, results);
+        ScoreTendFarm(agent, world, currentTile, currentTick, results, settlements);
         ScoreBuild(agent, world, currentTile, results, settlements);
         ScoreSocialize(agent, world, currentTick, results);
         ScoreReproduce(agent, world, currentTile, results, allAgents, settlements);
@@ -639,7 +639,7 @@ public static class UtilityScorer
     }
 
     private static void ScoreTendFarm(Agent agent, World world, Tile currentTile,
-        int currentTick, List<ScoredAction> results)
+        int currentTick, List<ScoredAction> results, List<Settlement>? settlements = null)
     {
         if (!agent.Knowledge.Contains("farming")) return;
 
@@ -713,8 +713,33 @@ public static class UtilityScorer
         int farmCap = hasGranaryNearHome ? int.MaxValue : SimConfig.MaxFarmTilesPreGranary;
         if (existingFarmCount >= farmCap) return;
 
-        // Score candidate tiles for new farm placement using placement formula
-        var bestCandidate = ScoreFarmPlacementCandidates(agent, world, homeX, homeY);
+        // US-014: Use PlacementScorer when agent has a settlement
+        Settlement? agentSettlement = null;
+        if (agent.SettlementId != null && settlements != null)
+            agentSettlement = settlements.FirstOrDefault(s => s.Id == agent.SettlementId);
+
+        (int X, int Y)? bestCandidate;
+        if (agentSettlement != null)
+        {
+            // Check if settlement has any existing farms
+            bool hasExistingFarms = agentSettlement.Structures.Any(s => s.Type == "farm");
+            if (!hasExistingFarms)
+            {
+                // First farm: directional placement
+                bestCandidate = PlacementScorer.FindFirstFarmTile(agentSettlement, world, agent.X, agent.Y);
+            }
+            else
+            {
+                // Subsequent farms: extension scoring via PlacementScorer
+                bestCandidate = PlacementScorer.FindBestTile("farm", agentSettlement, world, agent.X, agent.Y);
+            }
+        }
+        else
+        {
+            // No settlement: fallback to legacy home-based placement
+            bestCandidate = ScoreFarmPlacementCandidates(agent, world, homeX, homeY);
+        }
+
         if (bestCandidate.HasValue)
         {
             int dist = Math.Max(Math.Abs(bestCandidate.Value.X - agent.X),
