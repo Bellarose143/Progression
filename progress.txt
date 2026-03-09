@@ -17,6 +17,7 @@ Started: Sun Mar  8 06:42:16 UTC 2026
 - Tests that use distance thresholds (e.g., CaretakerRange, CaretakerMTMEscapeDist) need grid sizes and agent positions scaled for new 350×350 constants — reference SimConfig values instead of hardcoding distances
 - Tests with shelter that run agent AI should also create settlements via SettlementWith() to avoid behavioral cascade from settlement-gated reproduction
 - PlacementScorer only applies when agent has a settlement — first shelter founding uses HomeTile/currentTile fallback
+- Tile.Biome is read-only — use Structures.Add("cleared") to make tiles farmable in tests, not biome assignment
 - Always call Settlement.ResetIdCounter() in test setup alongside Agent/Animal/Carcass/Pen
 
 ---
@@ -293,4 +294,27 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - Campfire duplicate check should be at settlement level (Any structure of type campfire/hearth) not tile level, since placement scorer may pick a different tile
   - The ScoreBuild method needed the settlements parameter threaded through from ScoreAll/ScoreHomeActions — both call sites must be updated
   - Integration tests (D25bBaseline, DeathRegression) run 50K ticks each and take 40+ minutes total — filter with specific test names for quick iteration
+---
+
+## 2026-03-09 - US-014
+- Implemented first farm directional placement and farm extension scoring
+- Changes to PlacementScorer.cs:
+  - Added FindFirstFarmTile(): scans 8 directions from ResidentialCenter in widening cones, counts Plains/cleared tiles within 15 tiles, selects direction with most farmland, places first farm 8-10 tiles from center with fallback to 7-12
+  - Added ScoreFarm(): +3.0 adjacent to existing farm, +2.0 within 5 of AgriculturalCenter, -3.0 within 5 of ResidentialCenter, +1.0 Plains, -1.0 Forest, -5.0 on existing structures
+  - Added HasAnyStructure() helper (excludes "farm" and "cleared")
+  - Wired "farm" into FindBestTile switch with IsFarmable pre-filter
+- Changes to UtilityScorer.cs:
+  - ScoreTendFarm now accepts optional settlements parameter
+  - New farm placement uses PlacementScorer when agent has settlement: FindFirstFarmTile for first farm, FindBestTile("farm") for subsequent farms
+  - Legacy ScoreFarmPlacementCandidates kept as fallback for agents without settlement
+- Changes to PlacementScorerTests.cs: 6 new tests (first farm distance, water avoidance, adjacency preference, residential avoidance, structure avoidance, contiguous growth)
+- Updated baseline tests: D25bBaselineTests (seed 16001: 1→2, seed 55555: 1→0) and DeathRegressionIntegrationTests (same)
+- Build: 0 errors
+- Tests: 348/348 pass (0 failures)
+- Files changed: PlacementScorer.cs, UtilityScorer.cs, PlacementScorerTests.cs, D25bBaselineTests.cs, DeathRegressionIntegrationTests.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - Tile.Biome is read-only — cannot override biomes in tests. Use tile.Structures.Add("cleared") to make non-Plains tiles farmable for test setups
+  - Tests for placement scoring must account for procedural world gen biomes — use dynamic tile finding (search for Plains tiles) rather than hardcoded coordinates
+  - Farm directional placement causes behavioral cascade (different farm locations → different agent movement → different death counts) — always update D25b and DeathRegression baselines
+  - The adjacency bonus (+3.0) is the strongest farm scoring signal, ensuring contiguous growth as designed
 ---
