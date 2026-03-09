@@ -246,3 +246,25 @@ Started: Sun Mar  8 06:42:16 UTC 2026
   - TestSimBuilder.SettlementWith() is the standard way to set up settlements in tests — shelter on tile + settlement entity with members
   - The CanReproduceWithPartner method still accepts World parameter for API compatibility but no longer uses it for shelter checks
 ---
+
+## 2026-03-09 - US-012
+- Implemented SettlementZones system for emergent zone tracking
+- Created SettlementZones.cs:
+  - ResidentialCenter, AgriculturalCenter, AnimalCenter, StorageCenter as (int,int) tuples
+  - Recalculate() method computes weighted average position of structures per zone type
+  - Structure type mapping: lean_to/shelter/reinforced_shelter/improved_shelter/campfire/hearth → Residential, farm → Agricultural, animal_pen → Animal, granary → Storage
+  - Centers default to settlement CenterTile when no structures of that type exist
+- Changes to Settlement.cs:
+  - Added Zones property (SettlementZones), initialized in both constructors
+- Changes to AgentAI.cs:
+  - Zones.Recalculate() called alongside RecalculateTerritory() at all 4 call sites (founding, structure addition, farm creation in TryDispatchTendFarm, farm creation in CompleteTendFarm)
+- Changes to TestSimBuilder.cs:
+  - Added Zones.Recalculate() after shelter structure setup
+- Build: 0 errors
+- Tests: 105/105 relevant tests pass (WorldGen, Settlement, Reproduction, Animal, Behavioral, Build, Caretaker, Opportunistic)
+- Files changed: SettlementZones.cs (new), Settlement.cs, AgentAI.cs, TestSimBuilder.cs, prd.json, progress.txt
+- **Learnings for future iterations:**
+  - SettlementZones.Recalculate() must be called at the same 4 call sites as RecalculateTerritory() — founding, structure add in CompleteBuild, and two farm creation paths (TryDispatchTendFarm and CompleteTendFarm)
+  - The Zones object is initialized with CenterTile=(0,0) in constructors since CenterTile is set via object initializer after construction — this is fine because Recalculate() is called with the correct CenterTile after structures are added
+  - "hearth" is an additional residential structure type (upgrade from campfire) — include it in zone mapping
+---

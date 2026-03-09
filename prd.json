@@ -211,7 +211,7 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Structure type mapping: Shelter/ImprovedShelter/Campfire → Residential, Farm → Agricultural, Pen → Animal, Granary → Storage. This is data infrastructure — placement scoring uses it in the next stories."
     },
     {
