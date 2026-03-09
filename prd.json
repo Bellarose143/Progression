@@ -33,7 +33,7 @@
         "dotnet test --filter \"Category!=Slow\" passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Search for 'new Simulation(', 'new World(', 'TestSimBuilder', and similar patterns. TestSimBuilder creates real World instances so those tests qualify. Be careful not to tag tests that only use simple World stubs or mocked tiles. The spec says the Integration trait is informational — it does NOT exclude from Ralph's fast gate (only Slow does)."
     },
     {

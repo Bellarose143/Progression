@@ -35,3 +35,18 @@ Started: 2026-03-09
   - No `RunForTicks` method exists — tests use `for` loops with `sim.Tick()` or `sim.Tick(n)`
   - Fast suite takes ~90s (above 60s target in US-003), may need investigation
 ---
+
+## 2026-03-09 - US-002
+- Tagged all Integration tests with `[Trait("Category", "Integration")]` at class level
+- 46 test files modified, adding class-level Integration trait to all classes using real World/Simulation/TestSimBuilder
+- Pure unit test classes NOT tagged: D25cCombatTests, D25dDomesticatedBehaviorTests, D25dPenOperationsTests
+- D25dDomesticationTests.cs has 8 classes — 6 tagged (use new World), 2 skipped (pure unit tests)
+- Files with existing method-level Integration traits (D25bBaselineTests, DeathRegressionIntegrationTests, PreD25bValidationTests) — added class-level, removed redundant method-level
+- Build: 0 errors, 1 warning
+- Fast suite: 330 tests pass, 0 failures, ~1 min
+- **Learnings for future iterations:**
+  - Class-level `[Trait]` in xUnit applies to all methods — more maintainable than per-method for files where all tests qualify
+  - `sed -i` via Bash is much faster for bulk trait additions across 40+ files than using Edit tool (which requires Read first)
+  - D25cCombatTests only tests Carcass/Agent objects directly — no World or Simulation, so it's a pure unit test
+  - D25dDomesticationTests.cs is a multi-class file — be careful to tag selectively based on which classes use World
+---
