@@ -48,6 +48,7 @@ public class RaylibRenderer : IDisposable
     public bool ShowGrid { get; set; }
     public bool ShowDiscoveryPanel { get; set; }
     public bool ShowTechTree { get; set; }
+    public bool ShowTerritory { get; set; }
     public EventFilterLevel EventFilter { get; set; } = EventFilterLevel.High;
 
     // Timing
@@ -313,6 +314,9 @@ public class RaylibRenderer : IDisposable
 
         if (Rl.IsKeyPressed(KeyboardKey.K))
             ShowDiscoveryPanel = !ShowDiscoveryPanel;
+
+        if (Rl.IsKeyPressed(KeyboardKey.V))
+            ShowTerritory = !ShowTerritory;
     }
 
     /// <summary>
@@ -330,7 +334,7 @@ public class RaylibRenderer : IDisposable
     public void Render(List<Agent> agents, SimulationStats stats,
                        IReadOnlyList<SimulationEvent> recentEvents,
                        float ticksPerSecond, bool isPaused, float deltaTime,
-                       int peakPopulation)
+                       int peakPopulation, List<Settlement>? settlements = null)
     {
         elapsedTime += deltaTime;
         notificationManager.Update(deltaTime);
@@ -340,6 +344,9 @@ public class RaylibRenderer : IDisposable
         Rl.BeginMode2D(camera);
 
         worldRenderer.Render(world, camera, tileSize, ShowGrid, screenWidth, screenHeight, spriteBatch);
+
+        if (ShowTerritory && settlements != null && camera.Zoom >= 0.15f)
+            RenderTerritoryOverlay(settlements);
 
         animalRenderer.Render(world, camera, tileSize, screenWidth, screenHeight, stats.CurrentTick, LerpAlpha);
 
@@ -404,6 +411,69 @@ public class RaylibRenderer : IDisposable
             int textWidth = Rl.MeasureText("PAUSED", 40);
             int viewportCenterX = (screenWidth - UIRenderer.PanelWidth) / 2;
             Rl.DrawText("PAUSED", viewportCenterX - textWidth / 2, screenHeight / 2 - 20, 40, Color.Yellow);
+        }
+    }
+
+    // Settlement territory colors (semi-transparent, one per settlement)
+    private static readonly Color[] TerritoryColors = new[]
+    {
+        new Color(50, 120, 200, 60),   // blue
+        new Color(200, 80, 50, 60),    // red
+        new Color(50, 180, 80, 60),    // green
+        new Color(180, 150, 40, 60),   // gold
+        new Color(150, 50, 180, 60),   // purple
+        new Color(40, 180, 180, 60),   // teal
+    };
+
+    private static readonly Color[] TerritoryBorderColors = new[]
+    {
+        new Color(50, 120, 200, 140),
+        new Color(200, 80, 50, 140),
+        new Color(50, 180, 80, 140),
+        new Color(180, 150, 40, 140),
+        new Color(150, 50, 180, 140),
+        new Color(40, 180, 180, 140),
+    };
+
+    private void RenderTerritoryOverlay(List<Settlement> settlements)
+    {
+        // Frustum culling — only render visible tiles
+        Vector2 topLeft = Rl.GetScreenToWorld2D(new Vector2(0, 0), camera);
+        Vector2 bottomRight = Rl.GetScreenToWorld2D(new Vector2(screenWidth, screenHeight), camera);
+        int startX = Math.Max(0, (int)Math.Floor(topLeft.X / tileSize) - 1);
+        int startY = Math.Max(0, (int)Math.Floor(topLeft.Y / tileSize) - 1);
+        int endX = Math.Min(world.Width - 1, (int)Math.Floor(bottomRight.X / tileSize) + 1);
+        int endY = Math.Min(world.Height - 1, (int)Math.Floor(bottomRight.Y / tileSize) + 1);
+
+        for (int si = 0; si < settlements.Count; si++)
+        {
+            var settlement = settlements[si];
+            if (settlement.Territory.Count == 0) continue;
+
+            var fillColor = TerritoryColors[si % TerritoryColors.Length];
+            var borderColor = TerritoryBorderColors[si % TerritoryBorderColors.Length];
+
+            foreach (var (tx, ty) in settlement.Territory)
+            {
+                // Frustum cull
+                if (tx < startX || tx > endX || ty < startY || ty > endY) continue;
+
+                int px = tx * tileSize;
+                int py = ty * tileSize;
+
+                // Fill tile with semi-transparent color
+                Rl.DrawRectangle(px, py, tileSize, tileSize, fillColor);
+
+                // Draw border edges where territory meets non-territory
+                if (!settlement.Territory.Contains((tx - 1, ty)))
+                    Rl.DrawLine(px, py, px, py + tileSize, borderColor);
+                if (!settlement.Territory.Contains((tx + 1, ty)))
+                    Rl.DrawLine(px + tileSize, py, px + tileSize, py + tileSize, borderColor);
+                if (!settlement.Territory.Contains((tx, ty - 1)))
+                    Rl.DrawLine(px, py, px + tileSize, py, borderColor);
+                if (!settlement.Territory.Contains((tx, ty + 1)))
+                    Rl.DrawLine(px, py + tileSize, px + tileSize, py + tileSize, borderColor);
+            }
         }
     }
 

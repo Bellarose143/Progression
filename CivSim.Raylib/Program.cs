@@ -135,7 +135,7 @@ while (!Raylib_cs.Raylib.WindowShouldClose())
 
     renderer.Render(simulation.Agents, stats, recentEvents,
                     ticksPerSecond, isPaused, deltaTime,
-                    simulation.PeakPopulation);
+                    simulation.PeakPopulation, simulation.Settlements);
 
     Raylib_cs.Raylib.EndDrawing();
 }

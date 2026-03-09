@@ -595,7 +595,7 @@ public class UIRenderer
     public void RenderControls()
     {
         int x = 10, y = 10;
-        Rl.DrawRectangle(x - 5, y - 5, 220, 164, new Color(0, 0, 0, 140));
+        Rl.DrawRectangle(x - 5, y - 5, 220, 178, new Color(0, 0, 0, 140));
         Rl.DrawText("Controls:", x, y, 14, Color.LightGray);
         y += 18;
         Rl.DrawText("WASD/MMB: Pan", x, y, 11, Color.Gray); y += 14;
@@ -604,7 +604,8 @@ public class UIRenderer
         Rl.DrawText("Tab/Click: Select  F: Follow", x, y, 11, Color.Gray); y += 14;
         Rl.DrawText("P/Space: Pause  1-5: Speed", x, y, 11, Color.Gray); y += 14;
         Rl.DrawText("G: Grid  L: Log filter  R: Reset", x, y, 11, Color.Gray); y += 14;
-        Rl.DrawText("K: Discoveries  Esc: Deselect", x, y, 11, Color.Gray);
+        Rl.DrawText("K: Discoveries  V: Territory", x, y, 11, Color.Gray); y += 14;
+        Rl.DrawText("Esc: Deselect", x, y, 11, Color.Gray);
     }
 
     /// <summary>
