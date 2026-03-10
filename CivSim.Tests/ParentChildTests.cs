@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// All positions are OFFSETS from the simulation spawn center.
 /// Rules: RULE-P1, RULE-P2, RULE-R1, Bug-3-fix
 /// </summary>
+[Trait("Category", "Integration")]
 public class ParentChildTests
 {
     [Fact]

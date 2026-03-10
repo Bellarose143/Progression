@@ -18,11 +18,29 @@ public class World
     /// </summary>
     public Dictionary<(int X, int Y), List<Agent>> AgentsByPosition { get; }
 
+    // ── Animal Spatial Index (D25a) ─────────────────────────────────
+    public List<Animal> Animals { get; } = new();
+    public List<Carcass> Carcasses { get; } = new();
+    public List<Trap> Traps { get; } = new();
+    public List<Pen> Pens { get; } = new();
+    private Dictionary<(int X, int Y), List<Animal>> AnimalsByPosition { get; } = new();
+
     /// <summary>GDD v1.6.2: Counter of agent moves this tick. Reset at tick start. Used for pressure map cadence trigger.</summary>
     public int MovesThisTick { get; set; }
 
+    // ── World Food Counter ─────────────────────────────────────────────
+    /// <summary>Running total of edible food across all tiles (Berries + Grain + Animals + Fish).
+    /// Maintained incrementally at mutation sites instead of scanning all tiles.</summary>
+    public int TotalWorldFood { get; private set; }
+
+    /// <summary>Adjusts the running world food counter by the given delta.</summary>
+    internal void AdjustWorldFood(int delta) => TotalWorldFood += delta;
+
     // ── Seeding ────────────────────────────────────────────────────────
     public int Seed { get; }
+
+    /// <summary>True when world size >= 200 (350×350 scale). Controls per-tile resource density.</summary>
+    private readonly bool _largeWorld;
 
     private readonly Random random;
 
@@ -32,6 +50,7 @@ public class World
         Width = width;
         Height = height;
         Seed = seed;
+        _largeWorld = Math.Max(width, height) >= 200;
         Grid = new Tile[width, height];
         AgentsByPosition = new Dictionary<(int, int), List<Agent>>();
         random = new Random(seed);
@@ -52,8 +71,12 @@ public class World
         var elevationNoise = new PerlinNoise(seed);
         var moistureNoise = new PerlinNoise(seed + 1000);
 
-        double elevationScale = 0.05;
-        double moistureScale = 0.08;
+        // Scale noise frequency inversely with world size to keep biome patches proportional.
+        // Reference: 64×64 used elevation=0.05, moisture=0.08.
+        // For 350×350: 0.05 * 64/350 ≈ 0.009, 0.08 * 64/350 ≈ 0.015.
+        double sizeRatio = 64.0 / Math.Max(Width, Height);
+        double elevationScale = 0.05 * sizeRatio;
+        double moistureScale = 0.08 * sizeRatio;
 
         for (int x = 0; x < Width; x++)
         {
@@ -64,10 +87,34 @@ public class World
 
                 BiomeType biome = DetermineBiome(elevation, moisture);
                 Grid[x, y] = new Tile(x, y, biome);
+                // Per-tile random regen offset prevents synchronized resource spikes
+                Grid[x, y].RegenOffset = random.Next(0, SimConfig.RegenIntervalAnimals);
             }
         }
 
         PopulateResources();
+
+        // Snapshot regen caps: tiles that spawned a resource use their CapacityOverride as the regen ceiling.
+        // Tiles that never spawned a resource get no RegenCap entry (effective cap of 0),
+        // preventing phantom regen on tiles that only had capacity set but no actual resources.
+        for (int rx = 0; rx < Width; rx++)
+            for (int ry = 0; ry < Height; ry++)
+            {
+                var tile = Grid[rx, ry];
+                foreach (var kvp in tile.Resources)
+                {
+                    if (kvp.Value > 0)
+                        tile.RegenCap[kvp.Key] = tile.GetCapacity(kvp.Key);
+                }
+            }
+
+        // Initialize running food counter by summing all tile food once
+        int initialFood = 0;
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
+                initialFood += Grid[x, y].TotalFood();
+        TotalWorldFood = initialFood;
+        Console.WriteLine($"[World] TotalWorldFood initialized: {TotalWorldFood}");
     }
 
     private BiomeType DetermineBiome(double elevation, double moisture)
@@ -84,30 +131,32 @@ public class World
     /// Tier 1: Primary resources with Perlin noise density variance.
     /// Tier 2: Secondary resource patches (clustered 3-7 tile groups).
     /// Tier 3: Point features (rare single-tile notable resources).
+    /// D23: Cross-biome wood bleeding applied after primary resources.
     /// </summary>
     private void PopulateResources()
     {
         PopulatePrimaryResources();
+        PopulateCrossBiomeWood();
         PopulateSecondaryPatches();
         PopulatePointFeatures();
     }
 
     /// <summary>
     /// Section 6 Tier 1: Primary resources on biome-appropriate tiles with Perlin noise variance.
-    /// Creates richer and poorer areas within the same biome type.
-    /// Secondary resources (berries, animals) have REDUCED per-tile probability — patches provide the main source.
+    /// D23: Berry/animal scatter removed from Tier 1 — now placed via dedicated clustering passes.
+    /// D23: Mountain stone/ore varied instead of flat values.
     /// </summary>
     private void PopulatePrimaryResources()
     {
         var densityNoise = new PerlinNoise(Seed + 2000);
 
+        // ── Pass 1: Per-tile primary resources (no berries/animals — those use clustering) ──
         for (int x = 0; x < Width; x++)
         {
             for (int y = 0; y < Height; y++)
             {
                 var tile = Grid[x, y];
 
-                // Sample density noise → multiplier between ResourceDensityMin and 1.0
                 double noiseVal = densityNoise.GetValue(
                     x * SimConfig.ResourceDensityNoiseScale,
                     y * SimConfig.ResourceDensityNoiseScale);
@@ -119,52 +168,74 @@ public class World
                     case BiomeType.Forest:
                         tile.CapacityOverrides[ResourceType.Wood] = SimConfig.CapacityWood;
                         tile.CapacityOverrides[ResourceType.Berries] = SimConfig.CapacityBerries;
-                        tile.CapacityOverrides[ResourceType.Animals] = SimConfig.CapacityAnimals;
-                        // Wood: still common (80%) but quantity varies with density
+                        // Wood: 80% of forest tiles have wood.
                         if (random.NextDouble() < 0.80)
                         {
-                            int maxWood = Math.Max(3, (int)(SimConfig.CapacityWood * densityMult));
-                            int minWood = Math.Max(2, (int)(5 * densityMult));
-                            tile.Resources[ResourceType.Wood] = random.Next(minWood, maxWood + 1);
+                            if (_largeWorld)
+                            {
+                                // 350×350 scale: 3-4 per tile (down from up to 20 at 64×64)
+                                tile.Resources[ResourceType.Wood] = random.Next(3, 5);
+                            }
+                            else
+                            {
+                                // Legacy 64×64: density-varied amount (preserves RNG sequence)
+                                int maxWood = Math.Max(3, (int)(SimConfig.CapacityWood * densityMult));
+                                int minWood = Math.Max(2, (int)(5 * densityMult));
+                                tile.Resources[ResourceType.Wood] = random.Next(minWood, maxWood + 1);
+                            }
                         }
-                        // Berries: reduced to 15% per-tile (patches are the main source)
-                        if (random.NextDouble() < 0.15)
-                            tile.Resources[ResourceType.Berries] = random.Next(1, Math.Max(2, (int)(4 * densityMult)));
-                        // Animals: reduced to 8% (herds are the main source)
-                        if (random.NextDouble() < 0.08)
-                            tile.Resources[ResourceType.Animals] = random.Next(1, Math.Max(2, (int)(3 * densityMult)));
+                        // D23: Residual berry/animal scatter (2%) prevents food deserts between clusters
+                        if (random.NextDouble() < 0.02)
+                            tile.Resources[ResourceType.Berries] = 1;
+                        // D25b: Was Animals scatter — replaced with Meat to preserve food economy + RNG
+                        if (random.NextDouble() < 0.02)
+                            tile.Resources[ResourceType.Meat] = 1;
+                        // D21 Fix 2: Scattered loose stones on forest floor (finite, non-regenerating)
+                        tile.CapacityOverrides[ResourceType.Stone] = _largeWorld ? 1 : 3;
+                        if (random.NextDouble() < 0.40)
+                        {
+                            int stoneAmt = random.Next(1, 4); // always consume RNG call
+                            tile.Resources[ResourceType.Stone] = _largeWorld ? 1 : stoneAmt;
+                        }
                         break;
 
                     case BiomeType.Plains:
                         tile.CapacityOverrides[ResourceType.Grain] = SimConfig.CapacityGrain;
                         tile.CapacityOverrides[ResourceType.Berries] = SimConfig.CapacityBerries;
-                        tile.CapacityOverrides[ResourceType.Animals] = SimConfig.CapacityAnimals;
-                        // Wild grain: reduced to 20% (concentrations are the main source)
+                        // Wild grain: 20% of plains tiles
                         if (random.NextDouble() < 0.20)
                         {
-                            int maxGrain = Math.Max(2, (int)(8 * densityMult));
-                            tile.Resources[ResourceType.Grain] = random.Next(1, maxGrain + 1);
+                            if (_largeWorld)
+                                tile.Resources[ResourceType.Grain] = random.Next(2, 4); // 350×350: 2-3
+                            else
+                            {
+                                int maxGrain = Math.Max(2, (int)(8 * densityMult));
+                                tile.Resources[ResourceType.Grain] = random.Next(1, maxGrain + 1); // legacy
+                            }
                         }
-                        // Berries: reduced to 12%
-                        if (random.NextDouble() < 0.12)
-                            tile.Resources[ResourceType.Berries] = random.Next(1, Math.Max(2, (int)(4 * densityMult)));
-                        // Animals: reduced to 10%
-                        if (random.NextDouble() < 0.10)
-                            tile.Resources[ResourceType.Animals] = random.Next(1, Math.Max(2, (int)(3 * densityMult)));
+                        // D23: Residual berry/animal scatter (2%) prevents food deserts between clusters
+                        if (random.NextDouble() < 0.02)
+                            tile.Resources[ResourceType.Berries] = 1;
+                        // D25b: Was Animals scatter — replaced with Meat to preserve food economy + RNG
+                        if (random.NextDouble() < 0.02)
+                            tile.Resources[ResourceType.Meat] = 1;
+                        // D21 Fix 2: Scattered field stones (finite, non-regenerating)
+                        tile.CapacityOverrides[ResourceType.Stone] = _largeWorld ? 1 : 2;
+                        if (random.NextDouble() < 0.30)
+                        {
+                            int stoneAmt = random.Next(1, 3); // always consume RNG call
+                            tile.Resources[ResourceType.Stone] = _largeWorld ? 1 : stoneAmt;
+                        }
                         break;
 
                     case BiomeType.Mountain:
                         tile.CapacityOverrides[ResourceType.Stone] = SimConfig.CapacityStone;
                         tile.CapacityOverrides[ResourceType.Ore] = SimConfig.CapacityOre;
-                        // Stone: reduced to 40% (quarries are the main source for large amounts)
-                        if (random.NextDouble() < 0.40)
-                        {
-                            int maxStone = Math.Max(3, (int)(SimConfig.CapacityStone * densityMult * 0.6f));
-                            tile.Resources[ResourceType.Stone] = random.Next(2, maxStone + 1);
-                        }
-                        // Ore: reduced to 10% (ore veins are the main source)
-                        if (random.NextDouble() < 0.10)
-                            tile.Resources[ResourceType.Ore] = random.Next(1, Math.Max(2, (int)(4 * densityMult)));
+                        // Stone: 2-5 at 350×350 (was 1-5 at 64×64)
+                        tile.Resources[ResourceType.Stone] = _largeWorld ? random.Next(2, 6) : random.Next(1, 6);
+                        // Ore: 40% at 350×350 (was 5% at 64×64), 1-3 amount
+                        if (random.NextDouble() < (_largeWorld ? 0.40 : 0.05))
+                            tile.Resources[ResourceType.Ore] = random.Next(1, 4);
                         break;
 
                     case BiomeType.Water:
@@ -176,12 +247,248 @@ public class World
 
                     case BiomeType.Desert:
                         tile.CapacityOverrides[ResourceType.Berries] = 3;
-                        tile.CapacityOverrides[ResourceType.Stone] = 4;
+                        // D21 Fix 2: Exposed rocks in arid ground (capacity 2, 20% density)
+                        tile.CapacityOverrides[ResourceType.Stone] = 2;
                         if (random.NextDouble() < 0.15)
                             tile.Resources[ResourceType.Berries] = random.Next(1, 3);
-                        if (random.NextDouble() < 0.1)
-                            tile.Resources[ResourceType.Stone] = random.Next(1, 4);
+                        if (random.NextDouble() < 0.20)
+                            tile.Resources[ResourceType.Stone] = random.Next(1, 3);
                         break;
+                }
+            }
+        }
+
+        // ── D23 Fix 1: Berry Patch Clustering ──
+        PopulateBerryPatches();
+
+        // ── D23 Fix 2: Animal Placement Cleanup ──
+        PopulateAnimalClusters();
+    }
+
+    /// <summary>
+    /// D23 Fix 1: Berry patches.
+    /// 350×350: clusters of 15-25 forest tiles, 2-3 center, 1 edge.
+    /// 64×64 (legacy): clusters of 2-5 tiles, 8-10 center, 3-5 edge.
+    /// </summary>
+    private void PopulateBerryPatches()
+    {
+        var forestTiles = new List<(int X, int Y)>();
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
+                if (Grid[x, y].Biome == BiomeType.Forest)
+                    forestTiles.Add((x, y));
+
+        if (forestTiles.Count == 0) return;
+
+        // Patch center selection rate: 1% for large worlds (fewer, bigger), 10% for legacy
+        double centerChance = _largeWorld ? 0.01 : 0.10;
+        var patchCenters = new List<(int X, int Y)>();
+        foreach (var pos in forestTiles)
+        {
+            if (random.NextDouble() < centerChance)
+                patchCenters.Add(pos);
+        }
+
+        var berryTiles = new HashSet<(int, int)>();
+
+        foreach (var center in patchCenters)
+        {
+            int patchSize = _largeWorld ? random.Next(15, 26) : random.Next(2, 6);
+            var patch = FloodFillPatch(center.X, center.Y, patchSize,
+                t => t.Biome == BiomeType.Forest);
+
+            // Center tile berries
+            var centerTile = Grid[center.X, center.Y];
+            centerTile.Resources[ResourceType.Berries] = _largeWorld
+                ? random.Next(2, 4)    // 350×350: 2-3
+                : random.Next(8, 11);  // 64×64: 8-10
+            berryTiles.Add((center.X, center.Y));
+
+            // Edge tile berries
+            for (int i = 1; i < patch.Count; i++)
+            {
+                var (px, py) = patch[i];
+                var edgeTile = Grid[px, py];
+                edgeTile.Resources[ResourceType.Berries] = _largeWorld
+                    ? 1                    // 350×350: 1
+                    : random.Next(3, 6);   // 64×64: 3-5
+                berryTiles.Add((px, py));
+            }
+        }
+    }
+
+    /// <summary>
+    /// D25a: Animal placement — creates Animal entities AND sets tile Resources[Animals]
+    /// for backward compatibility (agents still eat from tiles until D25b).
+    /// RNG cascade: identical random.Next/NextDouble call sequence to the D23 version.
+    /// Species selection uses a secondary RNG seeded per-tile to avoid cascade.
+    /// </summary>
+    private void PopulateAnimalClusters()
+    {
+        var eligibleTiles = new List<(int X, int Y)>();
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
+            {
+                var biome = Grid[x, y].Biome;
+                if (biome == BiomeType.Forest || biome == BiomeType.Plains)
+                    eligibleTiles.Add((x, y));
+            }
+
+        if (eligibleTiles.Count == 0) return;
+
+        // 350×350: ~0.005 density to keep total animals similar to 64×64 (~400-600)
+        // 64×64 legacy: 0.04 density (preserves RNG-dependent test baselines)
+        double animalDensity = _largeWorld ? 0.005 : 0.04;
+        int targetCount = (int)(eligibleTiles.Count * animalDensity);
+        var animalTiles = new HashSet<(int, int)>();
+        (int X, int Y) lastPlaced = (-1, -1);
+
+        // Shuffle eligible tiles for random selection — SAME random calls as before
+        for (int i = eligibleTiles.Count - 1; i > 0; i--)
+        {
+            int j = random.Next(i + 1);
+            (eligibleTiles[i], eligibleTiles[j]) = (eligibleTiles[j], eligibleTiles[i]);
+        }
+
+        int placed = 0;
+        int eligIndex = 0;
+        int nextHerdId = 1;
+
+        while (placed < targetCount && eligIndex < eligibleTiles.Count)
+        {
+            (int X, int Y) chosen;
+
+            // 50% chance to try adjacent to last placed tile — SAME random call
+            if (lastPlaced.X >= 0 && random.NextDouble() < 0.50)
+            {
+                var adj = GetAdjacentEligible(lastPlaced.X, lastPlaced.Y, animalTiles);
+                if (adj.HasValue)
+                {
+                    chosen = adj.Value;
+                }
+                else
+                {
+                    chosen = eligibleTiles[eligIndex++];
+                }
+            }
+            else
+            {
+                chosen = eligibleTiles[eligIndex++];
+            }
+
+            if (animalTiles.Contains(chosen)) continue;
+
+            animalTiles.Add(chosen);
+            var tile = Grid[chosen.X, chosen.Y];
+            int animalCount = random.Next(3, 6); // 3-5 animals — SAME random call
+            // D25a: Spawn Animal entities using SECONDARY RNG (no cascade risk)
+            var tileRng = new Random(Seed + chosen.X * 1000 + chosen.Y);
+            var biome = tile.Biome;
+            int herdId = nextHerdId++;
+            // D25a fix: Clamp territory center away from map edges to prevent edge trapping
+            // Use wolf territory radius (largest) but cap to half world size for small test worlds
+            int maxRadius = Math.Min(25, Math.Min(Width, Height) / 2 - 1);
+            var territoryCenter = (
+                Math.Clamp(chosen.X, maxRadius, Width - 1 - maxRadius),
+                Math.Clamp(chosen.Y, maxRadius, Height - 1 - maxRadius)
+            );
+
+            for (int a = 0; a < animalCount; a++)
+            {
+                var species = PickSpeciesForBiome(biome, tileRng);
+                var animal = new Animal(species, chosen.X, chosen.Y, herdId, territoryCenter);
+                Animals.Add(animal);
+                AddAnimalToIndex(animal);
+            }
+            // D25b: Place Meat on tiles with animal clusters to preserve food economy
+            // (was tile.Resources[Animals] = animalCount in D25a)
+            tile.Resources[ResourceType.Meat] = animalCount;
+
+            lastPlaced = chosen;
+            placed++;
+        }
+    }
+
+    /// <summary>D25a: Species selection by biome using secondary RNG.</summary>
+    private static AnimalSpecies PickSpeciesForBiome(BiomeType biome, Random rng)
+    {
+        double roll = rng.NextDouble();
+        if (biome == BiomeType.Forest)
+        {
+            if (roll < 0.35) return AnimalSpecies.Deer;
+            if (roll < 0.65) return AnimalSpecies.Rabbit;
+            if (roll < 0.90) return AnimalSpecies.Boar;
+            return AnimalSpecies.Wolf;
+        }
+        else // Plains
+        {
+            if (roll < 0.20) return AnimalSpecies.Cow;
+            if (roll < 0.40) return AnimalSpecies.Sheep;
+            if (roll < 0.70) return AnimalSpecies.Rabbit;
+            if (roll < 0.90) return AnimalSpecies.Deer;
+            return AnimalSpecies.Wolf;
+        }
+    }
+
+    /// <summary>Returns a random adjacent tile that is Forest/Plains and not yet an animal tile.</summary>
+    private (int X, int Y)? GetAdjacentEligible(int x, int y, HashSet<(int, int)> used)
+    {
+        var candidates = new List<(int X, int Y)>();
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                int nx = x + dx, ny = y + dy;
+                if (!IsInBounds(nx, ny)) continue;
+                if (used.Contains((nx, ny))) continue;
+                var biome = Grid[nx, ny].Biome;
+                if (biome == BiomeType.Forest || biome == BiomeType.Plains)
+                    candidates.Add((nx, ny));
+            }
+        if (candidates.Count == 0) return null;
+        return candidates[random.Next(candidates.Count)];
+    }
+
+    /// <summary>
+    /// D23 Fix 3: Cross-biome wood bleeding. Non-forest biomes get sparse wood
+    /// based on proximity to forest. All cross-biome wood is finite, non-regenerating.
+    /// </summary>
+    private void PopulateCrossBiomeWood()
+    {
+        for (int x = 0; x < Width; x++)
+        {
+            for (int y = 0; y < Height; y++)
+            {
+                var tile = Grid[x, y];
+
+                switch (tile.Biome)
+                {
+                    case BiomeType.Plains:
+                        bool adjForest = HasAdjacentBiome(x, y, BiomeType.Forest);
+                        if (adjForest && random.NextDouble() < 0.30)
+                        {
+                            // Plains adjacent to forest: 30% chance, 1-3 wood
+                            tile.CapacityOverrides[ResourceType.Wood] = 3;
+                            tile.Resources[ResourceType.Wood] = random.Next(1, 4);
+                        }
+                        else if (!adjForest && random.NextDouble() < 0.05)
+                        {
+                            // Plains not adjacent to forest: 5% chance, 1 wood (lone tree)
+                            tile.CapacityOverrides[ResourceType.Wood] = 1;
+                            tile.Resources[ResourceType.Wood] = 1;
+                        }
+                        break;
+
+                    case BiomeType.Mountain:
+                        if (random.NextDouble() < 0.15)
+                        {
+                            // Mountain: 15% chance, 1-2 wood
+                            tile.CapacityOverrides[ResourceType.Wood] = 2;
+                            tile.Resources[ResourceType.Wood] = random.Next(1, 3);
+                        }
+                        break;
+
+                    // Desert: 0 wood. Water: 0 wood. No change.
                 }
             }
         }
@@ -194,12 +501,8 @@ public class World
     /// </summary>
     private void PopulateSecondaryPatches()
     {
-        PlacePatches(ResourceType.Berries, SimConfig.BerryPatchCount, SimConfig.PatchBerryAmount,
-            tile => tile.Biome == BiomeType.Forest);
-
-        PlacePatches(ResourceType.Animals, SimConfig.AnimalHerdCount, SimConfig.PatchAnimalAmount,
-            tile => tile.Biome == BiomeType.Plains
-                || (tile.Biome == BiomeType.Forest && HasAdjacentBiome(tile.X, tile.Y, BiomeType.Plains)));
+        // D23: Berries and Animals removed from Tier 2 — now handled by D23 clustering in PopulatePrimaryResources.
+        // Only Fish and Grain patches remain in Tier 2.
 
         PlacePatches(ResourceType.Fish, SimConfig.FishSchoolCount, SimConfig.PatchFishAmount,
             tile => tile.Biome == BiomeType.Water && HasAdjacentLand(tile.X, tile.Y));
@@ -263,7 +566,6 @@ public class World
                     int cap = resource switch
                     {
                         ResourceType.Berries => SimConfig.CapacityBerries,
-                        ResourceType.Animals => SimConfig.CapacityAnimals,
                         ResourceType.Fish => SimConfig.CapacityFish,
                         ResourceType.Grain => SimConfig.CapacityGrain,
                         _ => 15
@@ -320,7 +622,7 @@ public class World
     }
 
     /// <summary>Returns true if any of the 8 neighbors is the specified biome.</summary>
-    private bool HasAdjacentBiome(int x, int y, BiomeType biome)
+    public bool HasAdjacentBiome(int x, int y, BiomeType biome)
     {
         for (int dx = -1; dx <= 1; dx++)
             for (int dy = -1; dy <= 1; dy++)
@@ -550,6 +852,61 @@ public class World
         return result;
     }
 
+    // ── Animal Spatial Index Methods (D25a) ──────────────────────────
+
+    public void AddAnimalToIndex(Animal animal)
+    {
+        var key = (animal.X, animal.Y);
+        if (!AnimalsByPosition.ContainsKey(key))
+            AnimalsByPosition[key] = new List<Animal>();
+        AnimalsByPosition[key].Add(animal);
+    }
+
+    public void RemoveAnimalFromIndex(Animal animal)
+    {
+        var key = (animal.X, animal.Y);
+        if (AnimalsByPosition.TryGetValue(key, out var list))
+        {
+            list.Remove(animal);
+            if (list.Count == 0)
+                AnimalsByPosition.Remove(key);
+        }
+    }
+
+    public void UpdateAnimalPosition(Animal animal, int oldX, int oldY)
+    {
+        var oldKey = (oldX, oldY);
+        if (AnimalsByPosition.TryGetValue(oldKey, out var oldList))
+        {
+            oldList.Remove(animal);
+            if (oldList.Count == 0)
+                AnimalsByPosition.Remove(oldKey);
+        }
+        var newKey = (animal.X, animal.Y);
+        if (!AnimalsByPosition.ContainsKey(newKey))
+            AnimalsByPosition[newKey] = new List<Animal>();
+        AnimalsByPosition[newKey].Add(animal);
+    }
+
+    public List<Animal> GetAnimalsAt(int x, int y)
+    {
+        return AnimalsByPosition.TryGetValue((x, y), out var animals) ? animals : new List<Animal>();
+    }
+
+    public List<Animal> GetAnimalsInRadius(int x, int y, int radius)
+    {
+        var result = new List<Animal>();
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            for (int dy = -radius; dy <= radius; dy++)
+            {
+                if (AnimalsByPosition.TryGetValue((x + dx, y + dy), out var animals))
+                    result.AddRange(animals.Where(a => a.IsAlive));
+            }
+        }
+        return result;
+    }
+
     // ── Gathering Pressure ─────────────────────────────────────────────
 
     /// <summary>
@@ -564,7 +921,10 @@ public class World
     /// </summary>
     public void BuildPressureMap()
     {
-        PressureMap = new int[Width, Height];
+        if (PressureMap == null)
+            PressureMap = new int[Width, Height];
+        else
+            Array.Clear(PressureMap, 0, PressureMap.Length);
         int radius = SimConfig.GatheringPressureRadius;
 
         foreach (var agents in AgentsByPosition.Values)
@@ -600,8 +960,8 @@ public class World
             {
                 var tile = Grid[x, y];
 
-                // Increment TicksSinceLastGathered for overgrazing recovery
-                tile.TicksSinceLastGathered++;
+                // Mountain tiles have no renewable resources — skip entirely
+                if (tile.Biome == BiomeType.Mountain) continue;
 
                 RegenerateTile(tile, currentTick);
             }
@@ -616,7 +976,6 @@ public class World
             case BiomeType.Forest:
                 TryRegen(tile, ResourceType.Wood, SimConfig.RegenIntervalWood, 1, currentTick);
                 TryRegen(tile, ResourceType.Berries, SimConfig.RegenIntervalBerries, 1, currentTick);
-                TryRegen(tile, ResourceType.Animals, SimConfig.RegenIntervalAnimals, 1, currentTick);
                 break;
 
             case BiomeType.Plains:
@@ -634,9 +993,10 @@ public class World
                         // GDD v1.7.2: Untended farm reverts to wild grain regen rate
                         TryRegen(tile, ResourceType.Grain, SimConfig.RegenIntervalGrain, 1, currentTick);
                     }
+                    // Farm tiles: only grain regenerates, no berries/other resources
+                    break;
                 }
                 TryRegen(tile, ResourceType.Berries, SimConfig.RegenIntervalBerries, 1, currentTick);
-                TryRegen(tile, ResourceType.Animals, SimConfig.RegenIntervalAnimals, 1, currentTick);
                 break;
 
             case BiomeType.Mountain:
@@ -659,10 +1019,15 @@ public class World
     private void TryRegen(Tile tile, ResourceType resource, int interval, int amount, int currentTick)
     {
         if (interval <= 0) return; // 0 means non-renewable
-        if (currentTick % interval != 0) return;
+        // Per-tile offset desynchronizes regen across the map (no global spikes)
+        if ((currentTick + tile.RegenOffset) % interval != 0) return;
+
+        // Use RegenCap (snapshot of initial spawn) instead of GetCapacity (CapacityOverrides).
+        // This prevents tiles that never had a resource from slowly regenerating it to full capacity.
+        int cap = tile.RegenCap.GetValueOrDefault(resource, 0);
+        if (cap <= 0) return; // Resource was never present on this tile
 
         int current = tile.Resources.GetValueOrDefault(resource, 0);
-        int cap = tile.GetCapacity(resource);
         if (current >= cap) return;
 
         // Overgrazing check: ratio of current / capacity
@@ -671,12 +1036,13 @@ public class World
         // Critical overgrazing: regen paused until tile ungathered for recovery period
         if (ratio < SimConfig.OvergrazingThresholdCritical)
         {
-            if (tile.TicksSinceLastGathered < SimConfig.OvergrazingRecoveryTicks)
+            int ticksSinceGathered = currentTick - tile.LastGatheredTick;
+            if (ticksSinceGathered < SimConfig.OvergrazingRecoveryTicks)
                 return; // Still recovering — no regen
         }
 
         // Low overgrazing: halve regen rate (skip every other interval)
-        if (ratio < SimConfig.OvergrazingThresholdLow && currentTick % (interval * 2) != 0)
+        if (ratio < SimConfig.OvergrazingThresholdLow && (currentTick + tile.RegenOffset) % (interval * 2) != 0)
             return;
 
         // Gathering pressure penalty
@@ -697,7 +1063,10 @@ public class World
         if (pressureMultiplier < 1.0f && random.NextDouble() > pressureMultiplier)
             return; // Probabilistic skip for fractional pressure
 
-        tile.Resources[resource] = Math.Min(cap, current + effectiveAmount);
+        int newValue = Math.Min(cap, current + effectiveAmount);
+        tile.Resources[resource] = newValue;
+        if (ModeTransitionManager.IsFoodResource(resource))
+            AdjustWorldFood(newValue - current);
     }
 
     /// <summary>
@@ -706,13 +1075,32 @@ public class World
     private void TryRegenFarm(Tile tile, ResourceType resource, int interval, int amount, int currentTick)
     {
         if (interval <= 0) return;
-        if (currentTick % interval != 0) return;
+        if ((currentTick + tile.RegenOffset) % interval != 0) return;
 
         int current = tile.Resources.GetValueOrDefault(resource, 0);
         int cap = tile.GetCapacity(resource);
         if (current < cap)
         {
-            tile.Resources[resource] = Math.Min(cap, current + amount);
+            int newValue = Math.Min(cap, current + amount);
+            tile.Resources[resource] = newValue;
+            if (ModeTransitionManager.IsFoodResource(resource))
+                AdjustWorldFood(newValue - current);
         }
+    }
+
+    // ── Diagnostics ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the sum of all resource units across all tiles on the map.
+    /// Used for before/after measurement of resource regen fixes.
+    /// </summary>
+    public int TotalResourceCount()
+    {
+        int total = 0;
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
+                foreach (var kvp in Grid[x, y].Resources)
+                    total += kvp.Value;
+        return total;
     }
 }

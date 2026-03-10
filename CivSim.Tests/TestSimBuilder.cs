@@ -53,10 +53,20 @@ public class TestSimBuilder
         public Dictionary<ResourceType, int>          HomeStorage { get; } = new();
     }
 
+    // ── Settlement specs ────────────────────────────────────────────────────
+    private sealed class SettlementSpec
+    {
+        public int Dx { get; set; }   // offset from spawn center
+        public int Dy { get; set; }
+        public string Name { get; set; } = "TestSettlement";
+        public List<string> AgentNames { get; } = new();
+    }
+
     // ── State ─────────────────────────────────────────────────────────────────
     private readonly List<AgentSpec>                _agentList = new();
     private readonly Dictionary<string, AgentSpec>  _agentMap  = new(StringComparer.Ordinal);
     private readonly List<TileSpec>                 _tileSpecs = new();
+    private readonly List<SettlementSpec>           _settlementSpecs = new();
 
     // ── Grid ──────────────────────────────────────────────────────────────────
     public TestSimBuilder GridSize(int w, int h) { _width = w; _height = h; return this; }
@@ -124,6 +134,15 @@ public class TestSimBuilder
     /// <summary>Add resource at spawn_center + (dx, dy).</summary>
     public TestSimBuilder ResourceAt(int dx, int dy, ResourceType type, int amount)
         { NewTileSpec(dx, dy).Resources.Add((type, amount)); return this; }
+
+    /// <summary>Create a settlement at spawn_center + (dx, dy) with named agents as members.</summary>
+    public TestSimBuilder SettlementWith(int dx, int dy, params string[] agentNames)
+    {
+        var spec = new SettlementSpec { Dx = dx, Dy = dy };
+        spec.AgentNames.AddRange(agentNames);
+        _settlementSpecs.Add(spec);
+        return this;
+    }
 
     /// <summary>Add home storage (+ implicit shelter) at spawn_center + (dx, dy).</summary>
     public TestSimBuilder HomeStorageAt(int dx, int dy, ResourceType type, int amount)
@@ -210,6 +229,48 @@ public class TestSimBuilder
 
             if (spec.InitialMode.HasValue)
                 agent.TransitionMode(spec.InitialMode.Value, 0);
+        }
+
+        // ── Phase 4: Create settlements and assign agents. ────────────────
+        foreach (var ss in _settlementSpecs)
+        {
+            int sx = Math.Clamp(scX + ss.Dx, 0, _width  - 1);
+            int sy = Math.Clamp(scY + ss.Dy, 0, _height - 1);
+
+            var settlement = new Settlement
+            {
+                Name = ss.Name,
+                CenterTile = (sx, sy),
+                FoundedTick = 0
+            };
+
+            // Add shelter structure at settlement center (matches ShelterAt placement)
+            var tile = world.GetTile(sx, sy);
+            string? shelterType = null;
+            foreach (var s in tile.Structures)
+            {
+                if (s == "lean_to" || s == "shelter" || s == "reinforced_shelter" || s == "improved_shelter")
+                { shelterType = s; break; }
+            }
+            if (shelterType != null)
+            {
+                settlement.Structures.Add((sx, sy, shelterType));
+                settlement.RecalculateShelterQuality();
+                settlement.Zones.Recalculate(settlement.Structures, settlement.CenterTile);
+            }
+
+            // Assign agents as members
+            foreach (var agentName in ss.AgentNames)
+            {
+                var agent = spawnedAgents.FirstOrDefault(sa => sa.Spec.Name == agentName).Agent;
+                if (agent != null)
+                {
+                    agent.SettlementId = settlement.Id;
+                    settlement.Members.Add(agent.Id);
+                }
+            }
+
+            simulation.Settlements.Add(settlement);
         }
 
         return new TestSim(simulation, world, _width, _height, scX, scY);

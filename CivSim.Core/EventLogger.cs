@@ -26,7 +26,8 @@ public class EventLogger
         {
             var simEvt = new SimulationEvent(evt.Tick, evt.Message, evt.Type)
             {
-                RecipeId = evt.RecipeId
+                RecipeId = evt.RecipeId,
+                AgentId = evt.AgentId
             };
             events.Add(simEvt);
 

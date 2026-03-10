@@ -12,8 +12,23 @@ const int tileSize = 64;
 
 Console.WriteLine("=== CivSim Raylib - Initializing ===\n");
 
-// Generate world — uses SimConfig.DefaultGridWidth/Height (256×256)
-int seed = (int)DateTime.Now.Ticks;
+// Parse optional --seed argument
+int seed;
+int seedArgIndex = Array.IndexOf(args, "--seed");
+if (seedArgIndex >= 0 && seedArgIndex + 1 < args.Length && int.TryParse(args[seedArgIndex + 1], out int parsedSeed))
+{
+    seed = parsedSeed;
+    Console.WriteLine($"Using user-specified seed: {seed}");
+}
+else if (args.Length > 0 && int.TryParse(args[0], out int positionalSeed))
+{
+    seed = positionalSeed;
+    Console.WriteLine($"Using user-specified seed: {seed}");
+}
+else
+{
+    seed = (int)DateTime.Now.Ticks;
+}
 Console.WriteLine($"Generating {SimConfig.DefaultGridWidth}x{SimConfig.DefaultGridHeight} world with seed: {seed}");
 var world = new World(seed);
 Console.WriteLine("World generation complete!");
@@ -32,6 +47,7 @@ string logTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 string logPath = Path.Combine(logsDir, $"run_{seed}_{logTimestamp}.csv");
 var runLogger = new CivSim.Core.RunLogger(logPath, seed);
 simulation.RunLogger = runLogger;
+runLogger.SetAgents(simulation.Agents);
 runLogger.SubscribeToEventBus(simulation.EventBus);
 Console.WriteLine($"Run logger: {logPath}");
 
@@ -102,6 +118,14 @@ while (!Raylib_cs.Raylib.WindowShouldClose())
         }
     }
 
+    // Compute interpolation alpha for smooth agent movement
+    {
+        double tickInterval = 1.0 / ticksPerSecond;
+        renderer.LerpAlpha = (tickInterval > 0 && !isPaused)
+            ? Math.Clamp((float)(timeSinceLastTick / tickInterval), 0f, 1f)
+            : 1.0f;
+    }
+
     // Render
     Raylib_cs.Raylib.BeginDrawing();
     Raylib_cs.Raylib.ClearBackground(Color.Black);
@@ -111,7 +135,7 @@ while (!Raylib_cs.Raylib.WindowShouldClose())
 
     renderer.Render(simulation.Agents, stats, recentEvents,
                     ticksPerSecond, isPaused, deltaTime,
-                    simulation.PeakPopulation);
+                    simulation.PeakPopulation, simulation.Settlements);
 
     Raylib_cs.Raylib.EndDrawing();
 }
@@ -124,6 +148,12 @@ var finalStats = simulation.GetStats();
 runLogger.WriteRunSummary(finalStats, simulation.Agents);
 runLogger.Dispose();
 Console.WriteLine($"\nRun log saved: {logPath}");
+
+// Write run summary report
+string diagnosticsDir = Path.Combine(AppContext.BaseDirectory, "diagnostics");
+string summaryPath = Path.Combine(diagnosticsDir, $"run_summary_seed_{seed}.txt");
+CivSim.Core.RunSummaryWriter.Write(simulation, summaryPath);
+Console.WriteLine($"Run summary saved: {summaryPath}");
 
 Console.WriteLine("\n=== Final Statistics ===");
 Console.WriteLine(finalStats);

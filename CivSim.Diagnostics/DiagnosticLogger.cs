@@ -220,6 +220,14 @@ public class DiagnosticLogger : IDisposable
                 ? $"ALIVE - Hunger={agent.Hunger:F1}, Health={agent.Health}, Age={Agent.FormatTicks(agent.Age)}"
                 : $"DEAD at age {Agent.FormatTicks(agent.Age)}";
             writer.WriteLine($"  Agent {agent.Id}: {status}");
+
+            // D19: Restlessness stats
+            float avgR = agent.RestlessnessSampleCount > 0
+                ? agent.RestlessnessSum / agent.RestlessnessSampleCount : 0f;
+            float pctAbove50 = agent.RestlessnessSampleCount > 0
+                ? 100f * agent.RestlessnessAbove50Ticks / agent.RestlessnessSampleCount : 0f;
+            writer.WriteLine($"    Avg Restlessness: {avgR:F1}, Peak: {agent.PeakRestlessness:F1}, " +
+                $"Time>50: {pctAbove50:F1}%, Current: {agent.Restlessness:F1}");
         }
 
         writer.WriteLine();
@@ -289,6 +297,13 @@ public class AgentSnapshot
     public bool IsAlive { get; set; }
     public ActionType Action { get; set; }
     public Dictionary<ResourceType, int> Inventory { get; set; } = new();
+
+    // D19: Restlessness stats
+    public float Restlessness { get; set; }
+    public float PeakRestlessness { get; set; }
+    public float RestlessnessSum { get; set; }
+    public int RestlessnessSampleCount { get; set; }
+    public int RestlessnessAbove50Ticks { get; set; }
 }
 
 /// <summary>Complete snapshot of one simulation tick.</summary>

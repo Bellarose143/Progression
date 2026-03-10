@@ -26,5 +26,17 @@ public enum ActionType
     Withdraw,    // GDD v1.7: Withdraw food from a granary structure (2 ticks / ~4 min)
     Socialize,   // GDD v1.7.1: Move toward a visible agent for social interaction
     ReturnHome,  // GDD v1.7.1: Move toward home tile (quadratic pull)
-    ShareFood    // GDD v1.7.2: Give food to a starving adjacent agent (2 ticks / ~4 min)
+    ShareFood,   // GDD v1.7.2: Give food to a starving adjacent agent (2 ticks / ~4 min)
+    ClearLand,   // Directive #5 Fix 3b: Clear vegetation from adjacent tile for farming/building (40 ticks)
+    TendAnimals, // Directive #5 Fix 3c: Tend animals at an animal pen for food production (25 ticks)
+    Hunt,        // D25b: Pursue and kill an animal entity for meat
+    Harvest,     // D25b: Butcher a carcass to produce meat (3 ticks)
+    Combat,      // D25c: Fighting a dangerous animal (tick-by-tick damage exchange)
+    SetTrap,     // D25c: Place a trap for passive rabbit catching (2 ticks)
+    GrowingUp,   // D19.2: Display-only — child/youth inactivity, separate from adult Idle in diagnostics
+    Tame,        // D25d: Offer food to a wild animal to tame it (multi-tick)
+    PenAnimal,   // D25d: Lead a following domesticated animal into a pen (1 tick)
+    ReleasePenAnimal, // D25d: Release an animal from a pen to follow agent (1 tick)
+    FeedPen,     // D25d: Deposit grain from inventory into pen food store (1 tick)
+    Slaughter    // D25d: Butcher a penned animal for Meat/Hide/Bone (2 ticks)
 }

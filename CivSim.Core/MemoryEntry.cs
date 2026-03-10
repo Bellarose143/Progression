@@ -7,7 +7,9 @@ public enum MemoryType
 {
     Resource,
     AgentSighting,
-    Structure
+    Structure,
+    AnimalSighting,
+    CarcassSighting
 }
 
 /// <summary>
@@ -31,6 +33,12 @@ public class MemoryEntry
 
     /// <summary>Structure ID observed (only set when Type == Structure).</summary>
     public string? StructureId { get; set; }
+
+    /// <summary>Animal ID observed (only set when Type == AnimalSighting).</summary>
+    public int? AnimalId { get; set; }
+
+    /// <summary>Animal species observed (only set when Type == AnimalSighting).</summary>
+    public AnimalSpecies? AnimalSpecies { get; set; }
 
     /// <summary>Tick when this observation was made.</summary>
     public int TickObserved { get; set; }

@@ -1,0 +1,28 @@
+{
+  "rabbit": { "spritesheet": "rabbit_32x32.png" },
+  "deer": { "spritesheet": "deer_roe_buck_32x32.png",
+    "variants": [
+      { "spritesheet": "deer_roe_doe_32x32.png", "weight": 0.25 },
+      { "spritesheet": "deer_whitetail_buck_32x32.png", "weight": 0.25 },
+      { "spritesheet": "deer_whitetail_doe_32x32.png", "weight": 0.25 }
+    ] },
+  "wolf": { "spritesheet": "wolf_gray_32x32.png",
+    "variants": [
+      { "spritesheet": "wolf_iberian_32x32.png", "weight": 0.4 },
+      { "spritesheet": "wolf_arctic_32x32.png", "weight": 0.1 }
+    ] },
+  "cow": { "spritesheet": "cow_hereford_32x32.png",
+    "variants": [
+      { "spritesheet": "cow_hereford_polled_32x32.png", "weight": 0.1 },
+      { "spritesheet": "cow_galloway_32x32.png", "weight": 0.1 },
+      { "spritesheet": "cow_galloway_belted_32x32.png", "weight": 0.05 },
+      { "spritesheet": "cow_hereford_black_32x32.png", "weight": 0.1 },
+      { "spritesheet": "cow_ayrshire_32x32.png", "weight": 0.1 },
+      { "spritesheet": "cow_brown_32x32.png", "weight": 0.1 },
+      { "spritesheet": "cow_highland_32x32.png", "weight": 0.05 },
+      { "spritesheet": "cow_holstein_32x32.png", "weight": 0.1 },
+      { "spritesheet": "cow_white_32x32.png", "weight": 0.1 }
+    ] },
+  "sheep": { "spritesheet": "sheep_32x32.png" },
+  "boar": { "spritesheet": "boar_32x32.png" }
+}

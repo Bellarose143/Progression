@@ -23,6 +23,12 @@ public sealed class RunLogger : IDisposable
     private bool _disposed;
     private const int FlushInterval = 100;
 
+    /// <summary>Directive #9: Reference to living agents for accurate DependentCount (young children only).</summary>
+    private List<Agent>? _allAgents;
+
+    /// <summary>Directive #9: Set before logging to enable accurate DependentCount.</summary>
+    public void SetAgents(List<Agent> agents) => _allAgents = agents;
+
     // Column count sanity — must match header below
     private const int ColumnCount = 30;
 
@@ -102,9 +108,24 @@ public sealed class RunLogger : IDisposable
         int homeTileX = agent.HomeTile.HasValue ? agent.HomeTile.Value.X : -1;
         int homeTileY = agent.HomeTile.HasValue ? agent.HomeTile.Value.Y : -1;
         int distFromHome = agent.HomeTile.HasValue
-            ? Math.Abs(agent.X - agent.HomeTile.Value.X) + Math.Abs(agent.Y - agent.HomeTile.Value.Y)
+            ? Math.Max(Math.Abs(agent.X - agent.HomeTile.Value.X), Math.Abs(agent.Y - agent.HomeTile.Value.Y))
             : -1;
-        int dependentCount = agent.Relationships.Values.Count(r => r == RelationshipType.Child);
+        // Directive #9 Fix 5: Count only non-adult children, not all children
+        int dependentCount = 0;
+        if (_allAgents != null)
+        {
+            foreach (var kvp in agent.Relationships)
+            {
+                if (kvp.Value != RelationshipType.Child) continue;
+                var child = _allAgents.FirstOrDefault(a => a.Id == kvp.Key);
+                if (child != null && child.IsAlive && child.Stage != DevelopmentStage.Adult)
+                    dependentCount++;
+            }
+        }
+        else
+        {
+            dependentCount = agent.Relationships.Values.Count(r => r == RelationshipType.Child);
+        }
         bool isNight = Agent.IsNightTime(tick);
 
         string modeName = agent.CurrentMode.ToString();
@@ -241,8 +262,8 @@ public sealed class RunLogger : IDisposable
             if (!_homeDrift.TryGetValue(name, out var hd))
                 hd = (0, 0, 0);
             _homeDrift[name] = (
-                hd.Near + (distFromHome <= 15 ? 1 : 0),
-                hd.Far + (distFromHome > 15 ? 1 : 0),
+                hd.Near + (distFromHome <= SimConfig.SafetyReturnDist ? 1 : 0),
+                hd.Far + (distFromHome > SimConfig.SafetyReturnDist ? 1 : 0),
                 hd.Total + 1
             );
         }
@@ -378,7 +399,7 @@ public sealed class RunLogger : IDisposable
         {
             float nearPct = hd.Total > 0 ? 100f * hd.Near / hd.Total : 0;
             string flag = nearPct < 80 ? " [RULE-H1 VIOLATION]" : "";
-            _writer.WriteLine($"# {name}: {nearPct:F1}% within 15 tiles ({hd.Near}/{hd.Total}){flag}");
+            _writer.WriteLine($"# {name}: {nearPct:F1}% within {SimConfig.SafetyReturnDist} tiles ({hd.Near}/{hd.Total}){flag}");
         }
         _writer.WriteLine();
 
@@ -493,6 +514,21 @@ public sealed class RunLogger : IDisposable
         var alive = agents.Where(a => a.IsAlive).ToList();
         var aliveDesc = alive.Select(a => $"{a.Name} age {Agent.FormatTicks(a.Age)}");
         _writer.WriteLine($"# Final Population: {alive.Count} ({string.Join(", ", aliveDesc)})");
+
+        // D19: Per-agent restlessness statistics
+        _writer.WriteLine();
+        _writer.WriteLine("# == RESTLESSNESS (D19) ==");
+        foreach (var agent in agents)
+        {
+            float avgR = agent.RestlessnessSampleCount > 0
+                ? agent.RestlessnessSum / agent.RestlessnessSampleCount : 0f;
+            float pctAbove50 = agent.RestlessnessSampleCount > 0
+                ? 100f * agent.RestlessnessAbove50Ticks / agent.RestlessnessSampleCount : 0f;
+            string status = agent.IsAlive ? "ALIVE" : "DEAD";
+            _writer.WriteLine($"#   {agent.Name} ({status}): Avg={avgR:F1}, Peak={agent.PeakRestlessness:F1}, " +
+                $"Time>50={pctAbove50:F1}%, Current={agent.Restlessness:F1}, Samples={agent.RestlessnessSampleCount}");
+        }
+        _writer.WriteLine();
 
         WriteDiagnosticStats();
 

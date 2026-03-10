@@ -13,6 +13,9 @@ public class SimulationEvent
     /// <summary>GDD v1.8 Section 9: Recipe ID for Discovery events, used for announcement level lookup.</summary>
     public string? RecipeId { get; set; }
 
+    /// <summary>BUG-07 fix: First-class agent ID field — eliminates fragile regex parsing.</summary>
+    public int AgentId { get; set; } = -1;
+
     public SimulationEvent(int tick, string message, EventType type = EventType.Info)
     {
         Tick = tick;

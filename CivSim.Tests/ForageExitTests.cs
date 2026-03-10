@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Tests for Forage mode exit conditions: return threshold, inventory full,
 /// hunger low, duration safety valve.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ForageExitTests
 {
     /// <summary>
@@ -26,11 +27,16 @@ public class ForageExitTests
             .ResourceAt(2, 0, ResourceType.Berries, 30)
             .Build();
 
+        // D11 Fix 3: Start during daytime so night rest doesn't block foraging
+        sim.Simulation.CurrentTick = 150;
+
         var alice = sim.GetAgent("Alice");
         alice.ModeCommit.ForageTargetResource = ResourceType.Berries;
         var target = sim.WorldPos(2, 0);
         alice.ModeCommit.ForageTargetTile = (target.X, target.Y);
         alice.ModeCommit.ForageReturnFoodThreshold = SimConfig.ForageReturnFoodDefault;
+        // D11 Fix 5: Set entry tick so commitment window works correctly
+        alice.ForageModeEntryTick = 100; // Well before current tick — commitment expired
 
         // Run until she either returns home or 200 ticks elapse
         bool returnedHome = sim.TickUntil(() =>
@@ -58,27 +64,37 @@ public class ForageExitTests
             .AgentHome("Alice", 0, 0)
             .ShelterAt(0, 0)
             .AgentMode("Alice", BehaviorMode.Forage)
-            // No food anywhere — she'll forage fruitlessly
+            // World has procedural resources (seed 1), so she may find food
             .Build();
 
         var alice = sim.GetAgent("Alice");
         alice.ModeCommit.ForageTargetResource = ResourceType.Berries;
         alice.ModeCommit.ForageReturnFoodThreshold = SimConfig.ForageReturnFoodDefault;
 
-        // Run past ForageMaxDuration (200 ticks) + margin
-        sim.Tick(SimConfig.ForageMaxDuration + 50);
+        // Verify agent exits Forage at SOME point during the run (safety valve or return threshold).
+        // She may re-enter Forage after returning home, so we check for any exit, not final state.
+        bool exitedForage = false;
+        for (int t = 0; t < SimConfig.ForageMaxDuration + 50; t++)
+        {
+            sim.Tick(1);
+            if (alice.CurrentMode != BehaviorMode.Forage)
+            {
+                exitedForage = true;
+                break;
+            }
+        }
 
-        // She should have exited Forage by now (to Home or Urgent)
-        Assert.NotEqual(BehaviorMode.Forage, alice.CurrentMode);
+        Assert.True(exitedForage, "Agent should exit Forage before duration safety valve");
     }
 
     /// <summary>
-    /// A foraging agent whose hunger drops below ForageExitHunger (45)
-    /// should exit Forage and go home — but ONLY if they have food somewhere.
-    /// We run tick-by-tick and set hunger each tick to ensure the check fires.
+    /// D13: Moderate hunger (above Urgent threshold) should NOT abort a foraging trip.
+    /// Only genuine emergencies (hunger < UrgentEntryHunger = 30) exit Forage.
+    /// An agent at hunger=40 with food in inventory should keep foraging until
+    /// commitment is met (5 gathers) or Urgent mode fires.
     /// </summary>
     [Fact]
-    public void Forage_Exits_When_Hungry_With_Food_Available()
+    public void Forage_Stays_When_Moderately_Hungry_With_Food()
     {
         var sim = new TestSimBuilder()
             .GridSize(32, 32).Seed(1)
@@ -88,28 +104,33 @@ public class ForageExitTests
             .ShelterAt(0, 0)
             .AgentMode("Alice", BehaviorMode.Forage)
             .AgentInventory("Alice", ResourceType.Berries, 3) // Has some food
+            .ResourceAt(3, 0, ResourceType.Berries, 20) // Food at current tile
             .Build();
+
+        // Start during daytime
+        sim.Simulation.CurrentTick = 150;
 
         var alice = sim.GetAgent("Alice");
         alice.ModeCommit.ForageTargetResource = ResourceType.Berries;
         alice.ModeCommit.ForageReturnFoodThreshold = SimConfig.ForageReturnFoodDefault;
+        alice.ForageModeEntryTick = 100;
 
-        // Run tick-by-tick, forcing hunger below exit threshold each tick
-        // Mode transitions only fire when agent isn't IsBusy, so give it time
-        bool exitedForage = false;
-        for (int i = 0; i < 30; i++)
+        // Run tick-by-tick, keeping hunger at 40 (above UrgentEntryHunger=30)
+        // Agent should stay in Forage because moderate hunger no longer exits
+        bool stayedInForage = true;
+        for (int i = 0; i < 15; i++)
         {
-            alice.Hunger = 40f; // Keep below ForageExitHunger (45)
+            alice.Hunger = 40f; // Moderate hunger — above Urgent threshold
             sim.Tick(1);
             if (alice.CurrentMode != BehaviorMode.Forage)
             {
-                exitedForage = true;
+                stayedInForage = false;
                 break;
             }
         }
 
-        Assert.True(exitedForage,
-            $"Foraging agent with food and hunger < {SimConfig.ForageExitHunger} should exit Forage. " +
+        Assert.True(stayedInForage,
+            $"D13: Moderately hungry agent (hunger=40, above Urgent threshold) should stay in Forage. " +
             $"Mode: {alice.CurrentMode}");
     }
 

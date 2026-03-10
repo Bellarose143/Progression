@@ -12,8 +12,10 @@ public enum ResourceType
     Stone,
     Berries,        // Forageable, edible raw
     Grain,          // Requires farming knowledge to cultivate; edible raw but better cooked
-    Animals,        // Requires hunting; must be cooked for full value
     Ore,            // Smelting/metalworking input — unlocked at higher tech tiers
     Fish,           // Requires proximity to Water biome; edible raw or cooked
-    PreservedFood   // GDD v1.7: Output of food preservation — dried meat, smoked fish. Restores 70 hunger.
+    Meat,           // Produced by hunting; edible raw or cooked
+    PreservedFood,  // GDD v1.7: Output of food preservation — dried meat, smoked fish. Restores 70 hunger.
+    Hide,           // D25c: Produced by hunting larger animals (Deer, Cow/Sheep, Boar, Wolf)
+    Bone            // D25c: Produced by hunting larger animals (Deer, Cow/Sheep, Boar, Wolf)
 }

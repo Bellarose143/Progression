@@ -25,8 +25,14 @@ public class RaylibRenderer : IDisposable
     private readonly AgentRenderer agentRenderer;
     private readonly UIRenderer uiRenderer = new();
     private readonly NotificationManager notificationManager = new();
+    private readonly AnimalRenderer animalRenderer;
     private readonly VisualEffectManager effectManager;
     private readonly TechTreeRenderer techTreeRenderer = new();
+    private readonly StructureRegistry structureRegistry;
+    private readonly ResourceSpriteRegistry resourceRegistry;
+
+    // PERF-01: Shared sprite batch for world-space atlas rendering
+    private readonly SpriteBatch spriteBatch = new();
 
     // Camera
     private Camera2D camera;
@@ -42,10 +48,14 @@ public class RaylibRenderer : IDisposable
     public bool ShowGrid { get; set; }
     public bool ShowDiscoveryPanel { get; set; }
     public bool ShowTechTree { get; set; }
+    public bool ShowTerritory { get; set; }
     public EventFilterLevel EventFilter { get; set; } = EventFilterLevel.High;
 
     // Timing
     private float elapsedTime;
+
+    /// <summary>Interpolation alpha (0..1) between last tick and next tick. Set by caller each frame.</summary>
+    public float LerpAlpha { get; set; } = 1.0f;
 
     public RaylibRenderer(World world, int tileSize, int screenWidth, int screenHeight,
                            (int X, int Y)? spawnCenter = null)
@@ -59,9 +69,18 @@ public class RaylibRenderer : IDisposable
         atlas = new SpriteAtlas();
         atlas.Load();
 
+        // Load structure registry
+        structureRegistry = new StructureRegistry();
+        structureRegistry.Load(atlas);
+
+        // Load resource sprite registry
+        resourceRegistry = new ResourceSpriteRegistry();
+        resourceRegistry.Load(atlas);
+
         // Create subsystems with atlas
-        worldRenderer = new WorldRenderer(atlas);
+        worldRenderer = new WorldRenderer(atlas, structureRegistry, resourceRegistry);
         agentRenderer = new AgentRenderer(atlas);
+        animalRenderer = new AnimalRenderer(atlas);
         effectManager = new VisualEffectManager(atlas);
 
         // Initialize camera centered on spawn or world center
@@ -84,7 +103,7 @@ public class RaylibRenderer : IDisposable
             Target = new Vector2(cx, cy),
             Offset = new Vector2(viewportWidth / 2f, screenHeight / 2f),
             Rotation = 0.0f,
-            Zoom = 0.7f
+            Zoom = 0.3f
         };
     }
 
@@ -116,14 +135,16 @@ public class RaylibRenderer : IDisposable
         }
 
         // ── Camera ──────────────────────────────────────────────────
-        // Mouse wheel zoom toward mouse position
+        // Mouse wheel zoom toward mouse position (BUG-01 fix: preserve point under cursor)
         float wheel = Rl.GetMouseWheelMove();
         if (wheel != 0)
         {
-            Vector2 mouseWorldPos = Rl.GetScreenToWorld2D(Rl.GetMousePosition(), camera);
+            var mouseScreen = Rl.GetMousePosition();
+            var beforeZoom = Rl.GetScreenToWorld2D(mouseScreen, camera);
             camera.Zoom += wheel * 0.1f;
-            camera.Zoom = Math.Clamp(camera.Zoom, 0.25f, 4.0f);
-            camera.Target = mouseWorldPos;
+            camera.Zoom = Math.Clamp(camera.Zoom, 0.08f, 4.0f);
+            var afterZoom = Rl.GetScreenToWorld2D(mouseScreen, camera);
+            camera.Target += beforeZoom - afterZoom;
         }
 
         // Pan with middle mouse button
@@ -161,7 +182,7 @@ public class RaylibRenderer : IDisposable
             {
                 camera.Target = new Vector2(world.Width * tileSize / 2f, world.Height * tileSize / 2f);
             }
-            camera.Zoom = 0.7f;
+            camera.Zoom = 0.3f;
         }
 
         // ── Selection ───────────────────────────────────────────────
@@ -249,12 +270,16 @@ public class RaylibRenderer : IDisposable
         if (Rl.IsKeyPressed(KeyboardKey.F))
             FollowMode = !FollowMode;
 
-        // Follow mode — camera tracks selected agent
+        // Follow mode — camera tracks selected agent (using interpolated visual position)
         if (FollowMode && SelectedAgent != null && SelectedAgent.IsAlive)
         {
-            camera.Target = new Vector2(
-                SelectedAgent.X * tileSize + tileSize / 2f,
-                SelectedAgent.Y * tileSize + tileSize / 2f);
+            var visualPos = agentRenderer.GetVisualPosition(SelectedAgent.Id, tileSize);
+            if (visualPos != Vector2.Zero)
+                camera.Target = visualPos + new Vector2(tileSize / 2f, tileSize / 2f);
+            else
+                camera.Target = new Vector2(
+                    SelectedAgent.X * tileSize + tileSize / 2f,
+                    SelectedAgent.Y * tileSize + tileSize / 2f);
         }
 
         // GDD v1.7: Keep dead agents selectable for DeathReportDuration (120 ticks) after death
@@ -289,6 +314,9 @@ public class RaylibRenderer : IDisposable
 
         if (Rl.IsKeyPressed(KeyboardKey.K))
             ShowDiscoveryPanel = !ShowDiscoveryPanel;
+
+        if (Rl.IsKeyPressed(KeyboardKey.V))
+            ShowTerritory = !ShowTerritory;
     }
 
     /// <summary>
@@ -306,7 +334,7 @@ public class RaylibRenderer : IDisposable
     public void Render(List<Agent> agents, SimulationStats stats,
                        IReadOnlyList<SimulationEvent> recentEvents,
                        float ticksPerSecond, bool isPaused, float deltaTime,
-                       int peakPopulation)
+                       int peakPopulation, List<Settlement>? settlements = null)
     {
         elapsedTime += deltaTime;
         notificationManager.Update(deltaTime);
@@ -315,18 +343,34 @@ public class RaylibRenderer : IDisposable
         // ── World-space rendering ───────────────────────────────────
         Rl.BeginMode2D(camera);
 
-        worldRenderer.Render(world, camera, tileSize, ShowGrid, screenWidth, screenHeight);
+        worldRenderer.Render(world, camera, tileSize, ShowGrid, screenWidth, screenHeight, spriteBatch);
+
+        if (ShowTerritory && settlements != null && camera.Zoom >= 0.15f)
+            RenderTerritoryOverlay(settlements);
+
+        animalRenderer.Render(world, camera, tileSize, screenWidth, screenHeight, stats.CurrentTick, LerpAlpha);
 
         if (SelectedTile.HasValue)
             uiRenderer.RenderTileSelection(SelectedTile.Value.X, SelectedTile.Value.Y, tileSize);
 
-        agentRenderer.Render(agents, world, camera, tileSize, SelectedAgent, elapsedTime);
+        agentRenderer.Render(agents, world, camera, tileSize, SelectedAgent, elapsedTime, LerpAlpha, spriteBatch);
+
+        // Path line for selected agent (drawn after agents so it's visible on top)
+        // Pass world so the renderer can compute display-only A* paths for greedy-movement goals
+        agentRenderer.RenderPathLine(SelectedAgent, tileSize, LerpAlpha, world);
+
+        // Fix 5: Hunt/chase line from selected agent to target animal (dark red dashed)
+        agentRenderer.RenderHuntLine(SelectedAgent, world, tileSize, LerpAlpha);
+
+        // Fix 5: Health bars on animals targeted in combat
+        animalRenderer.RenderCombatHealthBars(world, agents, tileSize, camera);
 
         effectManager.Render();
 
         Rl.EndMode2D();
 
         // ── Screen-space rendering ──────────────────────────────────
+        agentRenderer.RenderOverflowBadges(camera);
         agentRenderer.RenderLabels(agents, camera, tileSize, SelectedAgent);
 
         // Clip UI panel rendering to prevent text overflow past screen edge
@@ -370,8 +414,77 @@ public class RaylibRenderer : IDisposable
         }
     }
 
+    // Settlement territory colors (semi-transparent, one per settlement)
+    private static readonly Color[] TerritoryColors = new[]
+    {
+        new Color(50, 120, 200, 60),   // blue
+        new Color(200, 80, 50, 60),    // red
+        new Color(50, 180, 80, 60),    // green
+        new Color(180, 150, 40, 60),   // gold
+        new Color(150, 50, 180, 60),   // purple
+        new Color(40, 180, 180, 60),   // teal
+    };
+
+    private static readonly Color[] TerritoryBorderColors = new[]
+    {
+        new Color(50, 120, 200, 140),
+        new Color(200, 80, 50, 140),
+        new Color(50, 180, 80, 140),
+        new Color(180, 150, 40, 140),
+        new Color(150, 50, 180, 140),
+        new Color(40, 180, 180, 140),
+    };
+
+    private void RenderTerritoryOverlay(List<Settlement> settlements)
+    {
+        // Frustum culling — iterate only visible tiles and check territory membership (O(1) per tile)
+        Vector2 topLeft = Rl.GetScreenToWorld2D(new Vector2(0, 0), camera);
+        Vector2 bottomRight = Rl.GetScreenToWorld2D(new Vector2(screenWidth, screenHeight), camera);
+        int startX = Math.Max(0, (int)Math.Floor(topLeft.X / tileSize) - 1);
+        int startY = Math.Max(0, (int)Math.Floor(topLeft.Y / tileSize) - 1);
+        int endX = Math.Min(world.Width - 1, (int)Math.Floor(bottomRight.X / tileSize) + 1);
+        int endY = Math.Min(world.Height - 1, (int)Math.Floor(bottomRight.Y / tileSize) + 1);
+
+        for (int si = 0; si < settlements.Count; si++)
+        {
+            var settlement = settlements[si];
+            if (settlement.Territory.Count == 0) continue;
+
+            var fillColor = TerritoryColors[si % TerritoryColors.Length];
+            var borderColor = TerritoryBorderColors[si % TerritoryBorderColors.Length];
+
+            // Iterate visible tile range, check territory membership (O(1) HashSet lookup)
+            for (int tx = startX; tx <= endX; tx++)
+            {
+                for (int ty = startY; ty <= endY; ty++)
+                {
+                    if (!settlement.Territory.Contains((tx, ty))) continue;
+
+                    int px = tx * tileSize;
+                    int py = ty * tileSize;
+
+                    // Fill tile with semi-transparent color
+                    Rl.DrawRectangle(px, py, tileSize, tileSize, fillColor);
+
+                    // Draw border edges where territory meets non-territory
+                    if (!settlement.Territory.Contains((tx - 1, ty)))
+                        Rl.DrawLine(px, py, px, py + tileSize, borderColor);
+                    if (!settlement.Territory.Contains((tx + 1, ty)))
+                        Rl.DrawLine(px + tileSize, py, px + tileSize, py + tileSize, borderColor);
+                    if (!settlement.Territory.Contains((tx, ty - 1)))
+                        Rl.DrawLine(px, py, px + tileSize, py, borderColor);
+                    if (!settlement.Territory.Contains((tx, ty + 1)))
+                        Rl.DrawLine(px, py + tileSize, px + tileSize, py + tileSize, borderColor);
+                }
+            }
+        }
+    }
+
     public void Dispose()
     {
+        resourceRegistry.Dispose();
+        structureRegistry.Dispose();
+        animalRenderer.Dispose();
         atlas.Dispose();
     }
 }

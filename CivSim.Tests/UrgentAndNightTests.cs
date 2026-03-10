@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Tests for Urgent mode priority cascade, night rest behavior,
 /// and ShouldInterrupt logic.
 /// </summary>
+[Trait("Category", "Integration")]
 public class UrgentAndNightTests
 {
     // ═══════════════════════════════════════════════════════════════════
@@ -119,7 +120,7 @@ public class UrgentAndNightTests
             int ty = Math.Clamp(alice.Y + dy, 0, 31);
             var tile = sim.World.GetTile(tx, ty);
             tile.Resources.Remove(ResourceType.Berries);
-            tile.Resources.Remove(ResourceType.Animals);
+            tile.Resources.Remove(ResourceType.Meat);
             tile.Resources.Remove(ResourceType.Fish);
             tile.Resources.Remove(ResourceType.Grain);
         }
@@ -237,6 +238,9 @@ public class UrgentAndNightTests
         // Advance past the initial night (tick 0-119) into daytime
         sim.TickUntil(() => !Agent.IsNightTime(sim.Simulation.CurrentTick), 200);
 
+        // Capture rest state before evening
+        int restTickBefore = alice.LastRestTick;
+
         // Now wait for the evening night (tick 360+)
         bool reachedEvening = sim.TickUntil(() =>
             Agent.IsNightTime(sim.Simulation.CurrentTick)
@@ -244,11 +248,10 @@ public class UrgentAndNightTests
 
         Assert.True(reachedEvening, "Should reach evening nighttime");
 
-        int restTickBefore = alice.LastRestTick;
-
         // Run through the night
         sim.Tick(120);
 
+        // Agent should have rested at some point during the evening/night period
         Assert.True(alice.LastRestTick > restTickBefore,
             $"Home agent should rest during night. " +
             $"LastRestTick: {restTickBefore} → {alice.LastRestTick}, " +

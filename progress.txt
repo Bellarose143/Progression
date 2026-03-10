@@ -1,0 +1,52 @@
+# Ralph Progress Log
+Started: 2026-03-09
+---
+
+## Codebase Patterns
+- dotnet is at "/mnt/c/Program Files/dotnet/dotnet.exe" on this WSL setup
+- xUnit test filter on WSL: use `--filter "Category%21%3DSlow"` (URL-encoded !=) instead of `--filter "Category!=Slow"` which gets shell-escaped incorrectly
+- Always call Settlement.ResetIdCounter() in test setup alongside Agent/Animal/Carcass/Pen
+- Pre-existing test failures may exist in D25bBaselineTests and DeathRegressionIntegrationTests — check baseline counts before assuming regressions
+- Integration tests are extremely slow (1+ min each running 50K ticks) — these are the targets for Slow tagging
+- Trait syntax: `[Trait("Category", "Slow")]` and `[Trait("Category", "Integration")]` — can stack both on same test
+- TestSimBuilder creates real World instances — tests using it qualify as Integration
+- **IMPORTANT**: This branch is based on ralph/world-scale-settlement (not main). All 350x350 world scale work is present.
+---
+
+## 2026-03-09 - US-001
+- Verified all Slow test tagging is already in place from prior commits
+- All 12 slow tests (10K+ ticks) already have `[Trait("Category", "Slow")]`:
+  - D25bDeathDiagnosticTests (3 seeds × 50K = 3 tests)
+  - D25bBaselineTests (5 seeds × 50K = 5 tests)
+  - DeathRegressionIntegrationTests (5 seeds × 50K = 5 tests)
+  - PreD25bValidationTests (3 × 50K = 3 tests)
+  - D25cFinalValidation (5 seeds × 100K = 5 tests)
+  - MoveDominanceTests::FounderAgent_Move_Below_60_Percent_LateGame (55K)
+  - OpportunisticPickupTests::FullSimDeterminism (20K)
+  - OpportunisticPickupTests::ResourceConservation (5K, conservatively tagged)
+  - ExploreReturnPathTests (2 × 75K = 2 tests)
+- Tests with both Slow + Integration traits: DeathRegression, D25bBaseline, PreD25b
+- D25dFinalValidation is in CivSim.Diagnostics (not xUnit tests), so no trait needed
+- Build: 0 errors, 6 warnings
+- Fast suite: 330 tests pass, 0 failures, duration 1m30s
+- Files changed: prd.json (marked US-001 passes: true)
+- **Learnings for future iterations:**
+  - All Slow tagging was already done in prior commits — the branch had this work completed but US-001 was never marked as passing
+  - No `RunForTicks` method exists — tests use `for` loops with `sim.Tick()` or `sim.Tick(n)`
+  - Fast suite takes ~90s (above 60s target in US-003), may need investigation
+---
+
+## 2026-03-09 - US-002
+- Tagged all Integration tests with `[Trait("Category", "Integration")]` at class level
+- 46 test files modified, adding class-level Integration trait to all classes using real World/Simulation/TestSimBuilder
+- Pure unit test classes NOT tagged: D25cCombatTests, D25dDomesticatedBehaviorTests, D25dPenOperationsTests
+- D25dDomesticationTests.cs has 8 classes — 6 tagged (use new World), 2 skipped (pure unit tests)
+- Files with existing method-level Integration traits (D25bBaselineTests, DeathRegressionIntegrationTests, PreD25bValidationTests) — added class-level, removed redundant method-level
+- Build: 0 errors, 1 warning
+- Fast suite: 330 tests pass, 0 failures, ~1 min
+- **Learnings for future iterations:**
+  - Class-level `[Trait]` in xUnit applies to all methods — more maintainable than per-method for files where all tests qualify
+  - `sed -i` via Bash is much faster for bulk trait additions across 40+ files than using Edit tool (which requires Read first)
+  - D25cCombatTests only tests Carcass/Agent objects directly — no World or Simulation, so it's a pure unit test
+  - D25dDomesticationTests.cs is a multi-class file — be careful to tag selectively based on which classes use World
+---

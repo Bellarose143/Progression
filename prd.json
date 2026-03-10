@@ -1,0 +1,56 @@
+{
+  "project": "CivSim",
+  "branchName": "ralph/test-categorization",
+  "description": "Test Categorization — Tag tests as Slow (10K+ ticks) and Integration (full Simulation/World) so Ralph's quality gate only runs the fast suite (~42s instead of 35min)",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Tag all Slow tests with Trait annotation",
+      "description": "As a developer, I need every test that runs 10,000+ simulation ticks or takes 30+ seconds wall time tagged with [Trait(\"Category\", \"Slow\")] so they are excluded from Ralph's fast quality gate.",
+      "acceptanceCriteria": [
+        "Every test calling simulation.RunForTicks(n) where n >= 10000 has [Trait(\"Category\", \"Slow\")]",
+        "Known slow tests tagged: DeathRegressionIntegrationTests, D25bBaselineTests, D25dFinalValidation tests, and any other 10K+ tick tests found via grep",
+        "Tests with both Slow and Integration criteria get both traits: [Trait(\"Category\", \"Slow\")][Trait(\"Category\", \"Integration\")]",
+        "No test without the Slow trait calls RunForTicks with n >= 10000 (grep verification)",
+        "Typecheck passes",
+        "dotnet test --filter \"Category!=Slow\" passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Search for RunForTicks, RunFor, and any loop calling simulation.Tick() with high iteration counts. Check all test projects. The spec says ~12 heavy tests exist. Tests can have multiple Trait attributes."
+    },
+    {
+      "id": "US-002",
+      "title": "Tag all Integration tests with Trait annotation",
+      "description": "As a developer, I need every test that creates a full Simulation or World instance with world generation tagged with [Trait(\"Category\", \"Integration\")] to distinguish them from pure unit tests.",
+      "acceptanceCriteria": [
+        "Every test that calls new Simulation(...) or new World(...) with full world generation has [Trait(\"Category\", \"Integration\")]",
+        "Tests using TestSimBuilder (which creates real World instances) are tagged Integration",
+        "Tests already tagged Slow that also create full simulations get both traits",
+        "Tests using mocked/stub worlds for pure unit testing are NOT tagged Integration",
+        "World generation distribution tests (WorldGenDistributionTests) are tagged Integration",
+        "Typecheck passes",
+        "dotnet test --filter \"Category!=Slow\" passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Search for 'new Simulation(', 'new World(', 'TestSimBuilder', and similar patterns. TestSimBuilder creates real World instances so those tests qualify. Be careful not to tag tests that only use simple World stubs or mocked tiles. The spec says the Integration trait is informational — it does NOT exclude from Ralph's fast gate (only Slow does)."
+    },
+    {
+      "id": "US-003",
+      "title": "Validate categorization and fast suite timing",
+      "description": "As a developer, I need to verify the fast suite (Category!=Slow) completes in under 60 seconds and the full suite still passes, confirming the categorization is correct.",
+      "acceptanceCriteria": [
+        "dotnet test --filter \"Category!=Slow\" completes in under 60 seconds",
+        "dotnet test (full suite) passes — no tests broken by trait additions",
+        "No untagged test takes more than 30 seconds (verified by running full suite and checking timing)",
+        "Fast suite runs 300+ tests (bulk of the suite is fast)",
+        "Slow suite (dotnet test --filter \"Category=Slow\") runs ~12 tests",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "This is a validation story. Run the suite both ways and verify timing. If a test that should be Slow is not tagged, go back and tag it. If a test that should be fast is tagged Slow, remove the tag. The goal per spec: fast suite under 60s, full suite under 45min."
+    }
+  ]
+}

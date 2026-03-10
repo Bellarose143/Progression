@@ -18,6 +18,11 @@ public class Tile
     /// <summary>Per-resource-type capacity limits. Falls back to BiomeDefaults.ResourceCapacity if absent.</summary>
     public Dictionary<ResourceType, int> CapacityOverrides { get; }
 
+    /// <summary>Maximum amount each resource can regen TO on this tile, based on initial spawn amounts.
+    /// Resources not present at world-gen get no entry (effective regen cap of 0).
+    /// This prevents tiles that never spawned a resource from slowly regenerating it to full capacity.</summary>
+    public Dictionary<ResourceType, int> RegenCap { get; }
+
     // ── Structures ─────────────────────────────────────────────────────
     /// <summary>Completed structures on this tile (e.g., "shelter", "granary").</summary>
     public List<string> Structures { get; }
@@ -53,8 +58,11 @@ public class Tile
     /// <summary>Tick when this farm tile was last tended. -999 = never.</summary>
     public int LastTendedTick { get; set; } = -999;
 
-    /// <summary>Ticks since this tile was last gathered from. Used for overgrazing recovery.</summary>
-    public int TicksSinceLastGathered { get; set; }
+    /// <summary>Tick when this tile was last gathered from. Used for overgrazing recovery (computed on demand).</summary>
+    public int LastGatheredTick { get; set; }
+
+    /// <summary>Per-tile random offset for resource regeneration. Prevents synchronized regen spikes.</summary>
+    public int RegenOffset { get; set; }
 
     // ── Constructor ────────────────────────────────────────────────────
     public Tile(int x, int y, BiomeType biome)
@@ -65,6 +73,7 @@ public class Tile
 
         Resources = new Dictionary<ResourceType, int>();
         CapacityOverrides = new Dictionary<ResourceType, int>();
+        RegenCap = new Dictionary<ResourceType, int>();
         Structures = new List<string>();
         BuildProgress = new Dictionary<string, int>();
 
@@ -86,7 +95,7 @@ public class Tile
         int total = 0;
         if (Resources.TryGetValue(ResourceType.Berries, out int b)) total += b;
         if (Resources.TryGetValue(ResourceType.Grain, out int g)) total += g;
-        if (Resources.TryGetValue(ResourceType.Animals, out int a)) total += a;
+        if (Resources.TryGetValue(ResourceType.Meat, out int mt)) total += mt;
         if (Resources.TryGetValue(ResourceType.Fish, out int f)) total += f;
         return total;
     }
@@ -100,8 +109,8 @@ public class Tile
     /// <summary>GDD v1.7: Returns whether this tile has a granary structure.</summary>
     public bool HasGranary => Structures.Contains("granary");
 
-    /// <summary>Returns whether this tile can be farmed (Plains or Forest biome, not water/mountain).</summary>
-    public bool IsFarmable => Biome == BiomeType.Plains || Biome == BiomeType.Forest;
+    /// <summary>Returns whether this tile can be farmed (Plains or cleared land only — never raw Forest/Water/Mountain).</summary>
+    public bool IsFarmable => Biome == BiomeType.Plains || Structures.Contains("cleared");
 
     // ── Home Storage (GDD v1.8 Section 7) ───────────────────────────
     /// <summary>Section 7: Food stored in this tile's shelter. Only valid if HasShelter is true.
@@ -188,7 +197,7 @@ public class Tile
     {
         if (!HasHomeStorage) return (ResourceType.Berries, 0);
 
-        ResourceType[] foodTypes = { ResourceType.PreservedFood, ResourceType.Berries, ResourceType.Grain, ResourceType.Animals, ResourceType.Fish };
+        ResourceType[] foodTypes = { ResourceType.PreservedFood, ResourceType.Berries, ResourceType.Grain, ResourceType.Meat, ResourceType.Fish };
         foreach (var food in foodTypes)
         {
             int withdrawn = WithdrawFromHome(food, amount);
@@ -205,7 +214,7 @@ public class Tile
         if (HomeTotalFood <= 0) return false;
 
         // Decay non-preserved food first (berries spoil before preserved food)
-        ResourceType[] decayOrder = { ResourceType.Berries, ResourceType.Fish, ResourceType.Animals, ResourceType.Grain, ResourceType.PreservedFood };
+        ResourceType[] decayOrder = { ResourceType.Berries, ResourceType.Fish, ResourceType.Meat, ResourceType.Grain, ResourceType.PreservedFood };
         foreach (var food in decayOrder)
         {
             if (HomeFoodStorage.TryGetValue(food, out int amt) && amt > 0)
@@ -217,6 +226,52 @@ public class Tile
             }
         }
         return false;
+    }
+
+    // ── Material Storage (Directive: Surplus Drives) ──────────────────
+    /// <summary>Materials stored at this home tile (wood, stone). No structure needed —
+    /// just a pile on the ground next to the shelter. Flat 30-unit capacity, no decay.</summary>
+    public Dictionary<ResourceType, int> HomeMaterialStorage { get; } = new();
+
+    /// <summary>Total materials stored (wood + stone combined).</summary>
+    public int HomeTotalMaterials
+    {
+        get
+        {
+            int total = 0;
+            foreach (var kvp in HomeMaterialStorage)
+                total += kvp.Value;
+            return total;
+        }
+    }
+
+    /// <summary>Maximum material storage capacity (flat 30, no structure needed).</summary>
+    public const int MaterialStorageCapacity = 30;
+
+    /// <summary>Deposits materials into home material storage. Returns amount actually deposited.</summary>
+    public int DepositMaterialToHome(ResourceType type, int amount)
+    {
+        int spaceLeft = MaterialStorageCapacity - HomeTotalMaterials;
+        int toDeposit = Math.Min(amount, spaceLeft);
+        if (toDeposit <= 0) return 0;
+
+        if (!HomeMaterialStorage.ContainsKey(type))
+            HomeMaterialStorage[type] = 0;
+        HomeMaterialStorage[type] += toDeposit;
+        return toDeposit;
+    }
+
+    /// <summary>Withdraws materials from home material storage. Returns amount withdrawn.</summary>
+    public int WithdrawMaterialFromHome(ResourceType type, int amount)
+    {
+        if (!HomeMaterialStorage.TryGetValue(type, out int available) || available <= 0)
+            return 0;
+
+        int toWithdraw = Math.Min(amount, available);
+        HomeMaterialStorage[type] -= toWithdraw;
+        if (HomeMaterialStorage[type] <= 0)
+            HomeMaterialStorage.Remove(type);
+        return toWithdraw;
     }
 
     // ── Granary Storage (GDD v1.7) ───────────────────────────────────
@@ -276,7 +331,7 @@ public class Tile
     {
         if (!HasGranary) return (ResourceType.Berries, 0);
 
-        ResourceType[] foodTypes = { ResourceType.PreservedFood, ResourceType.Berries, ResourceType.Grain, ResourceType.Animals, ResourceType.Fish };
+        ResourceType[] foodTypes = { ResourceType.PreservedFood, ResourceType.Berries, ResourceType.Grain, ResourceType.Meat, ResourceType.Fish };
         foreach (var food in foodTypes)
         {
             int withdrawn = WithdrawFromGranary(food, amount);

@@ -1,0 +1,11 @@
+{
+  "lean_to": { "sprite": "lean_to.png", "width": 34, "height": 26, "anchor": "bottom_center" },
+  "campfire": { "sprite": "campfire.png", "width": 64, "height": 64, "anchor": "bottom_center" },
+  "farm": { "sprite": "farm_plot.png", "width": 48, "height": 48, "anchor": "center" },
+  "animal_pen": { "sprite": "pen.png", "width": 26, "height": 48, "anchor": "bottom_center" },
+  "granary": { "sprite": "granary.png", "width": 40, "height": 44, "anchor": "bottom_center" },
+  "improved_shelter": { "sprite": "improved_shelter.png", "width": 32, "height": 32, "anchor": "bottom_center" },
+  "walls": { "sprite": "walls.png", "width": 32, "height": 32, "anchor": "center" },
+  "shelter": { "sprite": "shelter.png", "width": 32, "height": 32, "anchor": "bottom_center" },
+  "reinforced_shelter": { "sprite": "reinforced_shelter.png", "width": 34, "height": 26, "anchor": "bottom_center" }
+}
