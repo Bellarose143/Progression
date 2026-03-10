@@ -6,6 +6,7 @@ namespace CivSim.Tests;
 /// <summary>
 /// US-013/US-014: Tests for PlacementScorer — structure placement scoring.
 /// </summary>
+[Trait("Category", "Integration")]
 public class PlacementScorerTests
 {
     public PlacementScorerTests()

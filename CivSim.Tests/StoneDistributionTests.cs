@@ -10,6 +10,7 @@ namespace CivSim.Tests;
 /// Stone across Forest, Plains, and Desert biomes while leaving Mountain
 /// Stone generation unchanged.
 /// </summary>
+[Trait("Category", "Integration")]
 public class StoneDistributionTests
 {
     private readonly ITestOutputHelper _output;

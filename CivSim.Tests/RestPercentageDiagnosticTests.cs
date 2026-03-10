@@ -9,6 +9,7 @@ namespace CivSim.Tests;
 /// Tracks exactly when rest starts/ends, how many ticks are spent resting,
 /// and whether rest extends past dawn.
 /// </summary>
+[Trait("Category", "Integration")]
 public class RestPercentageDiagnosticTests
 {
     private readonly ITestOutputHelper _output;

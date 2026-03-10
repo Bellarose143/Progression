@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// Validates that experiment scoring maintains a competitive floor for content agents,
 /// and that Idle/Rest never beats Experiment when undiscovered recipes are available.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ExperimentStagnationTests
 {
     /// <summary>

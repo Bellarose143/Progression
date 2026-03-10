@@ -21,9 +21,9 @@ namespace CivSim.Tests;
 /// Seed 16001: 0→1 (Lily), seed 55555: 0→1 (Cole).
 /// </summary>
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class DeathRegressionIntegrationTests
 {
-    [Trait("Category", "Integration")]
     [Trait("Category", "Slow")]
     [Theory]
     [InlineData(42, 1)]

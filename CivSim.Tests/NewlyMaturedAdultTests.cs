@@ -10,6 +10,7 @@ namespace CivSim.Tests;
 /// Root cause: Youth never gathers into inventory, so upon maturation, ScoreExperiment
 /// finds no available recipes (requires resources) and nothing else scores, leading to Idle.
 /// </summary>
+[Trait("Category", "Integration")]
 public class NewlyMaturedAdultTests
 {
     /// <summary>

@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// child feeding, and spouse coordination.
 /// This mode was completely untested before — critical for family dynamics.
 /// </summary>
+[Trait("Category", "Integration")]
 public class CaretakerModeTests
 {
     /// <summary>

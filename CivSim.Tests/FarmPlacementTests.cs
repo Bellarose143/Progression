@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// never on forest/water/mountain tiles, and should prefer adjacency clustering
 /// near the settlement.
 /// </summary>
+[Trait("Category", "Integration")]
 public class FarmPlacementTests
 {
     // ── Test 1: Farms are never placed on the home tile ────────────────

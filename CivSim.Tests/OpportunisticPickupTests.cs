@@ -11,6 +11,7 @@ namespace CivSim.Tests;
 /// are never eligible. Pickup is deterministic via seeded RNG.
 /// </summary>
 [Collection("Integration")]
+[Trait("Category", "Integration")]
 public class OpportunisticPickupTests
 {
     // ═══════════════════════════════════════════════════════════════════

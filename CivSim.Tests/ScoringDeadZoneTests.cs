@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// Validates that content agents always have Experiment as a viable action,
 /// and that Move is never assigned without a valid destination.
 /// </summary>
+[Trait("Category", "Integration")]
 public class ScoringDeadZoneTests
 {
     /// <summary>

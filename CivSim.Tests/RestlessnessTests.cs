@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// D19: Restlessness Motivation Engine tests.
 /// Validates accumulation, drain, caps, multiplier, and display.
 /// </summary>
+[Trait("Category", "Integration")]
 public class RestlessnessTests
 {
     // Helper: create an adult agent with configurable restlessness via TestSimBuilder

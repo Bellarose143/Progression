@@ -8,6 +8,7 @@ namespace CivSim.Tests;
 /// Verifies that forage search sets a goal (not goalless movement)
 /// and that agents don't oscillate between 2 tiles indefinitely.
 /// </summary>
+[Trait("Category", "Integration")]
 public class MoveDominanceTests
 {
     [Fact]

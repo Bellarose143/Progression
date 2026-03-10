@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Tests for the RunSummaryWriter post-run summary report feature.
 /// Validates that all required sections are present and data is consistent.
 /// </summary>
+[Trait("Category", "Integration")]
 public class RunSummaryTests
 {
     /// <summary>

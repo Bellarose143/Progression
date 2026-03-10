@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Tests for Urgent mode priority cascade, night rest behavior,
 /// and ShouldInterrupt logic.
 /// </summary>
+[Trait("Category", "Integration")]
 public class UrgentAndNightTests
 {
     // ═══════════════════════════════════════════════════════════════════

@@ -6,6 +6,7 @@ namespace CivSim.Tests;
 /// <summary>
 /// v1.8 Behavioral Modes: Verifies mode transitions, hysteresis, and committed behavior.
 /// </summary>
+[Trait("Category", "Integration")]
 public class BehavioralModeTests
 {
     // ═══════════════════════════════════════════════════════════════════════

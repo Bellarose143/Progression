@@ -12,6 +12,7 @@ namespace CivSim.Tests;
 /// - NewAdult flag expiry
 /// - NewAdult explore dwell waiver
 /// </summary>
+[Trait("Category", "Integration")]
 public class D24ExploreWaterAdultTests
 {
     // ═══════════════════════════════════════════════════════════════════

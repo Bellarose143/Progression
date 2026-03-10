@@ -7,6 +7,7 @@ namespace CivSim.Tests;
 /// Tests for Build mode entry/exit and Explore mode exit conditions.
 /// Both modes were completely untested.
 /// </summary>
+[Trait("Category", "Integration")]
 public class BuildAndExploreExitTests
 {
     // ═══════════════════════════════════════════════════════════════════
